@@ -17,7 +17,7 @@ struct tmpfs_inode *find_inode(struct tmpfs_inode *root, const char *path) {
     char *token = strtok_r(path_copy, "/", &saveptr);
 
     while (token) {
-        if (!(current->mode & S_IFDIR)) {
+        if (!S_ISDIR(current->mode)) {
             free(path_copy);
             return NULL;
         }
