@@ -13,7 +13,7 @@ int path_lookup(struct tmpfs_inode *root, const char *path, struct tmpfs_inode *
             *parent = NULL;
         }
         if (name) {
-            name[0] = '\0';
+            name[0] = 0;
         }
         if (child) {
             *child = root;
@@ -68,7 +68,7 @@ int path_lookup(struct tmpfs_inode *root, const char *path, struct tmpfs_inode *
             }
         } else {
             prev = current;
-            current = &entries[i].inode;
+            current = entries[i].inode;
             token = strtok_r(NULL, "/", &saveptr);
         }
     }
