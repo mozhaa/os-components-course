@@ -114,6 +114,43 @@ static int tmpfs_mknod(const char *path, mode_t mode, dev_t dev) {
     return 0;
 }
 
+static int tmpfs_open(const char *path, struct fuse_file_info *fi) {
+    struct tmpfs_state *state = TMPFS_DATA;
+    struct tmpfs_inode *inode = find_inode(&state->root, path);
+    if (!inode)
+        return -ENOENT;
+    if (S_ISDIR(inode->mode))
+        return -EISDIR;
+    return 0;
+}
+
+static int tmpfs_utimens(const char *path, const struct timespec tv[2], struct fuse_file_info *fi) {
+    struct tmpfs_state *state = TMPFS_DATA;
+    struct tmpfs_inode *inode = find_inode(&state->root, path);
+    if (!inode)
+        return -ENOENT;
+
+    time_t now = time(NULL);
+
+    if (tv == NULL) {
+        inode->atime = now;
+        inode->mtime = now;
+    } else {
+        if (tv[0].tv_nsec == UTIME_NOW)
+            inode->atime = now;
+        else if (tv[0].tv_nsec != UTIME_OMIT)
+            inode->atime = tv[0].tv_sec;
+
+        if (tv[1].tv_nsec == UTIME_NOW)
+            inode->mtime = now;
+        else if (tv[1].tv_nsec != UTIME_OMIT)
+            inode->mtime = tv[1].tv_sec;
+    }
+
+    inode->ctime = now;
+    return 0;
+}
+
 void tmpfs_destroy(void *private_data) {
     struct tmpfs_state *state = TMPFS_DATA;
     // TODO: recursively free all inodes
@@ -124,6 +161,8 @@ struct fuse_operations tmpfs_oper = {
     .getattr = tmpfs_getattr,
     .readdir = tmpfs_readdir,
     .mknod = tmpfs_mknod,
+    .open = tmpfs_open,
+    .utimens = tmpfs_utimens,
     .destroy = tmpfs_destroy,
 };
 
