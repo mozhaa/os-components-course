@@ -12,7 +12,7 @@
 
 #include <fuse.h>
 
-int tmpfs_getattr(const char *path, struct stat *statbuf, struct fuse_file_info *fi) {
+static int tmpfs_getattr(const char *path, struct stat *statbuf, struct fuse_file_info *fi) {
     (void)fi;
 
     struct tmpfs_state *state = TMPFS_DATA;
@@ -31,8 +31,7 @@ int tmpfs_getattr(const char *path, struct stat *statbuf, struct fuse_file_info 
     statbuf->st_blksize = 4096;
 
     if (S_ISDIR(inode->mode)) {
-        // TODO: count only subdirectories
-        statbuf->st_nlink = 2 + inode->content.dir.entries_size;
+        statbuf->st_nlink = 2 + inode->content.dir.subdir_count;
         statbuf->st_size = 4096;
         statbuf->st_blocks = 8;
     } else if (S_ISREG(inode->mode)) {
@@ -46,8 +45,8 @@ int tmpfs_getattr(const char *path, struct stat *statbuf, struct fuse_file_info 
     return 0;
 }
 
-int tmpfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi,
-                  enum fuse_readdir_flags flags) {
+static int tmpfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi,
+                         enum fuse_readdir_flags flags) {
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *dir = find_inode(&state->root, path);
     if (!dir)
