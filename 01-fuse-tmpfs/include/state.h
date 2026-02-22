@@ -11,7 +11,7 @@ struct tmpfs_inode {
     int mode;
     uid_t uid;
     gid_t gid;
-    struct timespec atime, mtime, ctime;
+    time_t atime, mtime, ctime;
 
     union {
         struct {
@@ -19,7 +19,7 @@ struct tmpfs_inode {
             char *data;
         } file;
         struct {
-            struct dirent *entries;
+            struct tmpfs_dirent *entries;
             int entries_size;
             int entries_capacity;
         } dir;
