@@ -403,6 +403,141 @@ static int tmpfs_unlink(const char *path) {
     return 0;
 }
 
+static int tmpfs_rename(const char *oldpath, const char *newpath, unsigned int flags) {
+    struct tmpfs_state *state = TMPFS_DATA;
+    struct tmpfs_inode *src_parent;
+    char src_name[TMPFS_NAME_MAX_LENGTH + 1];
+    struct tmpfs_inode *src_inode;
+
+    struct tmpfs_inode *dst_parent;
+    char dst_name[TMPFS_NAME_MAX_LENGTH + 1];
+    struct tmpfs_inode *dst_inode;
+
+    int ret = path_lookup(&state->root, oldpath, &src_parent, src_name, &src_inode);
+    if (ret != 0) {
+        return ret;
+    }
+    if (src_inode == NULL) {
+        return -ENOENT;
+    }
+    if (src_parent == NULL) {
+        return -EINVAL;
+    }
+
+    ret = path_lookup(&state->root, newpath, &dst_parent, dst_name, &dst_inode);
+    if (ret != 0 && ret != -ENOENT) {
+        return ret;
+    }
+    if (dst_parent == NULL) {
+        return -EINVAL;
+    }
+
+    if (src_inode == dst_inode) {
+        return 0;
+    }
+
+    if (dst_inode != NULL) {
+        if (S_ISDIR(src_inode->mode) != S_ISDIR(dst_inode->mode)) {
+            return -EINVAL;
+        }
+        if (S_ISDIR(dst_inode->mode) && dst_inode->content.dir.entries_size != 0) {
+            return -ENOTEMPTY;
+        }
+    }
+
+    if (S_ISDIR(src_inode->mode)) {
+        size_t old_len = strlen(oldpath);
+        if (strncmp(oldpath, newpath, old_len) == 0) {
+            if (newpath[old_len] == '/') {
+                return -EINVAL;
+            } else if (newpath[old_len] == '\0') {
+                return 0;
+            }
+        }
+    }
+
+    if (dst_parent != src_parent) {
+        if (dst_parent->content.dir.entries_size == dst_parent->content.dir.entries_capacity) {
+            int new_cap = dst_parent->content.dir.entries_capacity * 2;
+            struct tmpfs_dirent *new_entries =
+                realloc(dst_parent->content.dir.entries, new_cap * sizeof(struct tmpfs_dirent));
+            if (!new_entries) {
+                return -ENOMEM;
+            }
+            dst_parent->content.dir.entries = new_entries;
+            dst_parent->content.dir.entries_capacity = new_cap;
+        }
+    }
+
+    int src_index = -1;
+    for (int i = 0; i < src_parent->content.dir.entries_size; i++) {
+        if (strcmp(src_parent->content.dir.entries[i].name, src_name) == 0) {
+            src_index = i;
+            break;
+        }
+    }
+    if (src_index == -1) {
+        return -ENOENT;
+    }
+
+    if (dst_inode != NULL) {
+        int dst_index = -1;
+        for (int i = 0; i < dst_parent->content.dir.entries_size; i++) {
+            if (strcmp(dst_parent->content.dir.entries[i].name, dst_name) == 0) {
+                dst_index = i;
+                break;
+            }
+        }
+        if (dst_index == -1) {
+            return -ENOENT;
+        }
+
+        if (S_ISDIR(dst_inode->mode)) {
+            free(dst_inode->content.dir.entries);
+            dst_parent->content.dir.subdir_count--;
+        } else {
+            free(dst_inode->content.file.data);
+        }
+
+        for (int i = dst_index; i < dst_parent->content.dir.entries_size - 1; i++) {
+            dst_parent->content.dir.entries[i] = dst_parent->content.dir.entries[i + 1];
+        }
+        dst_parent->content.dir.entries_size--;
+    }
+
+    struct tmpfs_dirent src_entry = src_parent->content.dir.entries[src_index];
+
+    for (int i = src_index; i < src_parent->content.dir.entries_size - 1; i++) {
+        src_parent->content.dir.entries[i] = src_parent->content.dir.entries[i + 1];
+    }
+    src_parent->content.dir.entries_size--;
+
+    if (S_ISDIR(src_inode->mode)) {
+        src_parent->content.dir.subdir_count--;
+    }
+
+    strncpy(src_entry.name, dst_name, TMPFS_NAME_MAX_LENGTH);
+    src_entry.name[TMPFS_NAME_MAX_LENGTH] = '\0';
+
+    dst_parent->content.dir.entries[dst_parent->content.dir.entries_size] = src_entry;
+    dst_parent->content.dir.entries_size++;
+
+    if (S_ISDIR(src_inode->mode)) {
+        dst_parent->content.dir.subdir_count++;
+    }
+
+    time_t now = time(NULL);
+    src_parent->mtime = now;
+    src_parent->ctime = now;
+    if (dst_parent != src_parent) {
+        dst_parent->mtime = now;
+        dst_parent->ctime = now;
+    }
+    src_inode->ctime = now;
+
+    return 0;
+}
+
 static void tmpfs_destroy(void *private_data) {
     struct tmpfs_state *state = TMPFS_DATA;
     // TODO: recursively free all inodes
@@ -421,6 +556,7 @@ struct fuse_operations tmpfs_oper = {
     .mkdir = tmpfs_mkdir,
     .rmdir = tmpfs_rmdir,
     .unlink = tmpfs_unlink,
+    .rename = tmpfs_rename,
     .destroy = tmpfs_destroy,
 };
 
