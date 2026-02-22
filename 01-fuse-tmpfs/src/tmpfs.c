@@ -17,8 +17,9 @@ static int tmpfs_getattr(const char *path, struct stat *statbuf, struct fuse_fil
 
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *inode = find_inode(&state->root, path);
-    if (!inode)
+    if (!inode) {
         return -ENOENT;
+    }
 
     memset(statbuf, 0, sizeof(struct stat));
 
@@ -49,10 +50,12 @@ static int tmpfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, of
                          enum fuse_readdir_flags flags) {
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *dir = find_inode(&state->root, path);
-    if (!dir)
+    if (!dir) {
         return -ENOENT;
-    if (!S_ISDIR(dir->mode))
+    }
+    if (!S_ISDIR(dir->mode)) {
         return -ENOTDIR;
+    }
 
     filler(buf, ".", NULL, 0, 0);
     filler(buf, "..", NULL, 0, 0);
@@ -72,18 +75,22 @@ static int tmpfs_mknod(const char *path, mode_t mode, dev_t dev) {
     struct tmpfs_inode *existing;
 
     int ret = path_lookup(&state->root, path, &parent, name, &existing);
-    if (ret != 0)
+    if (ret != 0) {
         return ret;
-    if (existing != NULL)
+    }
+    if (existing != NULL) {
         return -EEXIST;
-    if (parent == NULL)
+    }
+    if (parent == NULL) {
         return -EINVAL;
+    }
 
     if (parent->content.dir.entries_size == parent->content.dir.entries_capacity) {
         int new_cap = parent->content.dir.entries_capacity * 2;
         struct tmpfs_dirent *new_entries = realloc(parent->content.dir.entries, new_cap * sizeof(struct tmpfs_dirent));
-        if (!new_entries)
+        if (!new_entries) {
             return -ENOMEM;
+        }
         parent->content.dir.entries = new_entries;
         parent->content.dir.entries_capacity = new_cap;
     }
@@ -116,18 +123,21 @@ static int tmpfs_mknod(const char *path, mode_t mode, dev_t dev) {
 static int tmpfs_open(const char *path, struct fuse_file_info *fi) {
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *inode = find_inode(&state->root, path);
-    if (!inode)
+    if (!inode) {
         return -ENOENT;
-    if (S_ISDIR(inode->mode))
+    }
+    if (S_ISDIR(inode->mode)) {
         return -EISDIR;
+    }
     return 0;
 }
 
 static int tmpfs_utimens(const char *path, const struct timespec tv[2], struct fuse_file_info *fi) {
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *inode = find_inode(&state->root, path);
-    if (!inode)
+    if (!inode) {
         return -ENOENT;
+    }
 
     time_t now = time(NULL);
 
@@ -135,15 +145,17 @@ static int tmpfs_utimens(const char *path, const struct timespec tv[2], struct f
         inode->atime = now;
         inode->mtime = now;
     } else {
-        if (tv[0].tv_nsec == UTIME_NOW)
+        if (tv[0].tv_nsec == UTIME_NOW) {
             inode->atime = now;
-        else if (tv[0].tv_nsec != UTIME_OMIT)
+        } else if (tv[0].tv_nsec != UTIME_OMIT) {
             inode->atime = tv[0].tv_sec;
+        }
 
-        if (tv[1].tv_nsec == UTIME_NOW)
+        if (tv[1].tv_nsec == UTIME_NOW) {
             inode->mtime = now;
-        else if (tv[1].tv_nsec != UTIME_OMIT)
+        } else if (tv[1].tv_nsec != UTIME_OMIT) {
             inode->mtime = tv[1].tv_sec;
+        }
     }
 
     inode->ctime = now;
@@ -153,13 +165,16 @@ static int tmpfs_utimens(const char *path, const struct timespec tv[2], struct f
 static int tmpfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *inode = find_inode(&state->root, path);
-    if (!inode)
+    if (!inode) {
         return -ENOENT;
-    if (!S_ISREG(inode->mode))
+    }
+    if (!S_ISREG(inode->mode)) {
         return -EINVAL;
+    }
 
-    if (offset >= inode->content.file.size)
+    if (offset >= inode->content.file.size) {
         return 0;
+    }
 
     size_t available = inode->content.file.size - offset;
     size_t to_copy = size < available ? size : available;
@@ -173,16 +188,19 @@ static int tmpfs_read(const char *path, char *buf, size_t size, off_t offset, st
 static int tmpfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *inode = find_inode(&state->root, path);
-    if (!inode)
+    if (!inode) {
         return -ENOENT;
-    if (!S_ISREG(inode->mode))
+    }
+    if (!S_ISREG(inode->mode)) {
         return -EINVAL;
+    }
 
     size_t new_size = offset + size;
     if (new_size > inode->content.file.size) {
         char *new_data = realloc(inode->content.file.data, new_size);
-        if (!new_data)
+        if (!new_data) {
             return -ENOMEM;
+        }
         inode->content.file.data = new_data;
         if (offset > inode->content.file.size) {
             memset(inode->content.file.data + inode->content.file.size, 0, offset - inode->content.file.size);
@@ -201,10 +219,12 @@ static int tmpfs_write(const char *path, const char *buf, size_t size, off_t off
 static int tmpfs_truncate(const char *path, off_t size, struct fuse_file_info *fi) {
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *inode = find_inode(&state->root, path);
-    if (!inode)
+    if (!inode) {
         return -ENOENT;
-    if (!S_ISREG(inode->mode))
+    }
+    if (!S_ISREG(inode->mode)) {
         return -EINVAL;
+    }
 
     if (size == 0) {
         free(inode->content.file.data);
@@ -212,14 +232,16 @@ static int tmpfs_truncate(const char *path, off_t size, struct fuse_file_info *f
         inode->content.file.size = 0;
     } else if (size < inode->content.file.size) {
         char *new_data = realloc(inode->content.file.data, size);
-        if (!new_data && size > 0)
+        if (!new_data && size > 0) {
             return -ENOMEM;
+        }
         inode->content.file.data = new_data;
         inode->content.file.size = size;
     } else if (size > inode->content.file.size) {
         char *new_data = realloc(inode->content.file.data, size);
-        if (!new_data)
+        if (!new_data) {
             return -ENOMEM;
+        }
         memset(new_data + inode->content.file.size, 0, size - inode->content.file.size);
         inode->content.file.data = new_data;
         inode->content.file.size = size;
@@ -252,18 +274,22 @@ static int tmpfs_mkdir(const char *path, mode_t mode) {
     struct tmpfs_inode *existing;
 
     int ret = path_lookup(&state->root, path, &parent, name, &existing);
-    if (ret != 0)
+    if (ret != 0) {
         return ret;
-    if (existing != NULL)
+    }
+    if (existing != NULL) {
         return -EEXIST;
-    if (parent == NULL)
+    }
+    if (parent == NULL) {
         return -EINVAL;
+    }
 
     if (parent->content.dir.entries_size == parent->content.dir.entries_capacity) {
         int new_cap = parent->content.dir.entries_capacity * 2;
         struct tmpfs_dirent *new_entries = realloc(parent->content.dir.entries, new_cap * sizeof(struct tmpfs_dirent));
-        if (!new_entries)
+        if (!new_entries) {
             return -ENOMEM;
+        }
         parent->content.dir.entries = new_entries;
         parent->content.dir.entries_capacity = new_cap;
     }
