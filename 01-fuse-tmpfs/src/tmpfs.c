@@ -159,6 +159,10 @@ static int tmpfs_mknod(const char *path, mode_t mode, dev_t dev) {
     char name[TMPFS_NAME_MAX_LENGTH + 1];
     struct tmpfs_inode *existing;
 
+    if (!S_ISREG(mode) && !S_ISDIR(mode) && !S_ISLNK(mode)) {
+        return -EINVAL;
+    }
+
     int ret = path_lookup(state->root, path, &parent, name, &existing);
     if (ret != 0) {
         return ret;
