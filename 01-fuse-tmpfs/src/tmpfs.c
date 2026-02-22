@@ -18,9 +18,9 @@ int tmpfs_getattr(const char *path, struct stat *statbuf, struct fuse_file_info 
     statbuf->st_mode = inode->mode;
     statbuf->st_uid = inode->uid;
     statbuf->st_gid = inode->gid;
-    statbuf->st_atim = inode->atime;
-    statbuf->st_mtim = inode->mtime;
-    statbuf->st_ctim = inode->ctime;
+    statbuf->st_atime = inode->atime;
+    statbuf->st_mtime = inode->mtime;
+    statbuf->st_ctime = inode->ctime;
     statbuf->st_blksize = 4096;
 
     if (S_ISDIR(inode->mode)) {
