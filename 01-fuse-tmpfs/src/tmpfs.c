@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "params.h"
@@ -30,6 +31,7 @@ int tmpfs_getattr(const char *path, struct stat *statbuf, struct fuse_file_info 
     statbuf->st_blksize = 4096;
 
     if (S_ISDIR(inode->mode)) {
+        // TODO: count only subdirectories
         statbuf->st_nlink = 2 + inode->content.dir.entries_size;
         statbuf->st_size = 4096;
         statbuf->st_blocks = 8;
@@ -45,7 +47,7 @@ int tmpfs_getattr(const char *path, struct stat *statbuf, struct fuse_file_info 
 }
 
 void tmpfs_destroy(void *private_data) {
-    struct tmpfs_state *state = private_data;
+    struct tmpfs_state *state = TMPFS_DATA;
     // TODO: recursively free all inodes
     free(state);
 }
@@ -70,5 +72,5 @@ int main(int argc, char *argv[]) {
     state->root.content.dir.entries_size = 0;
     state->root.content.dir.entries_capacity = 16;
 
-    return fuse_main(argc, argv, &tmpfs_oper, &state);
+    return fuse_main(argc, argv, &tmpfs_oper, state);
 }
