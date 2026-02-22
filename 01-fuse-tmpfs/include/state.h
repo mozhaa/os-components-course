@@ -16,7 +16,6 @@ struct tmpfs_inode {
     gid_t gid;
     time_t atime, mtime, ctime;
     nlink_t nlink;
-    int freed;
 
     union {
         struct {
