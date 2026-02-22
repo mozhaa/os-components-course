@@ -151,6 +151,86 @@ static int tmpfs_utimens(const char *path, const struct timespec tv[2], struct f
     return 0;
 }
 
+static int tmpfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
+    struct tmpfs_state *state = TMPFS_DATA;
+    struct tmpfs_inode *inode = find_inode(&state->root, path);
+    if (!inode)
+        return -ENOENT;
+    if (!S_ISREG(inode->mode))
+        return -EINVAL;
+
+    if (offset >= inode->content.file.size)
+        return 0;
+
+    size_t available = inode->content.file.size - offset;
+    size_t to_copy = size < available ? size : available;
+    memcpy(buf, inode->content.file.data + offset, to_copy);
+
+    inode->atime = time(NULL);
+
+    return to_copy;
+}
+
+static int tmpfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
+    struct tmpfs_state *state = TMPFS_DATA;
+    struct tmpfs_inode *inode = find_inode(&state->root, path);
+    if (!inode)
+        return -ENOENT;
+    if (!S_ISREG(inode->mode))
+        return -EINVAL;
+
+    size_t new_size = offset + size;
+    if (new_size > inode->content.file.size) {
+        char *new_data = realloc(inode->content.file.data, new_size);
+        if (!new_data)
+            return -ENOMEM;
+        inode->content.file.data = new_data;
+        if (offset > inode->content.file.size) {
+            memset(inode->content.file.data + inode->content.file.size, 0, offset - inode->content.file.size);
+        }
+        inode->content.file.size = new_size;
+    }
+
+    memcpy(inode->content.file.data + offset, buf, size);
+    time_t now = time(NULL);
+    inode->mtime = now;
+    inode->ctime = now;
+
+    return size;
+}
+
+static int tmpfs_truncate(const char *path, off_t size, struct fuse_file_info *fi) {
+    struct tmpfs_state *state = TMPFS_DATA;
+    struct tmpfs_inode *inode = find_inode(&state->root, path);
+    if (!inode)
+        return -ENOENT;
+    if (!S_ISREG(inode->mode))
+        return -EINVAL;
+
+    if (size == 0) {
+        free(inode->content.file.data);
+        inode->content.file.data = NULL;
+        inode->content.file.size = 0;
+    } else if (size < inode->content.file.size) {
+        char *new_data = realloc(inode->content.file.data, size);
+        if (!new_data && size > 0)
+            return -ENOMEM;
+        inode->content.file.data = new_data;
+        inode->content.file.size = size;
+    } else if (size > inode->content.file.size) {
+        char *new_data = realloc(inode->content.file.data, size);
+        if (!new_data)
+            return -ENOMEM;
+        memset(new_data + inode->content.file.size, 0, size - inode->content.file.size);
+        inode->content.file.data = new_data;
+        inode->content.file.size = size;
+    }
+
+    inode->ctime = time(NULL);
+    inode->mtime = inode->ctime;
+    return 0;
+}
+
 void tmpfs_destroy(void *private_data) {
     struct tmpfs_state *state = TMPFS_DATA;
     // TODO: recursively free all inodes
@@ -162,6 +242,9 @@ struct fuse_operations tmpfs_oper = {
     .readdir = tmpfs_readdir,
     .mknod = tmpfs_mknod,
     .open = tmpfs_open,
+    .read = tmpfs_read,
+    .write = tmpfs_write,
+    .truncate = tmpfs_truncate,
     .utimens = tmpfs_utimens,
     .destroy = tmpfs_destroy,
 };
