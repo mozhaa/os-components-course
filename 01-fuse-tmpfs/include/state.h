@@ -26,6 +26,9 @@ struct tmpfs_inode {
             int entries_capacity;
             int subdir_count;
         } dir;
+        struct {
+            char *target;
+        } symlink;
     } content;
 };
 

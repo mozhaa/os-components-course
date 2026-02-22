@@ -39,6 +39,10 @@ static int tmpfs_getattr(const char *path, struct stat *statbuf, struct fuse_fil
         statbuf->st_nlink = 1;
         statbuf->st_size = inode->content.file.size;
         statbuf->st_blocks = (inode->content.file.size + 511) / 512;
+    } else if (S_ISLNK(inode->mode)) {
+        statbuf->st_nlink = 1;
+        statbuf->st_size = strlen(inode->content.symlink.target);
+        statbuf->st_blocks = (statbuf->st_size + 511) / 512;
     } else {
         return -EINVAL;
     }
@@ -128,6 +132,9 @@ static int tmpfs_open(const char *path, struct fuse_file_info *fi) {
     }
     if (S_ISDIR(inode->mode)) {
         return -EISDIR;
+    }
+    if (S_ISLNK(inode->mode)) {
+        return -EINVAL;
     }
     return 0;
 }
@@ -371,7 +378,7 @@ static int tmpfs_unlink(const char *path) {
     if (child == NULL) {
         return -ENOENT;
     }
-    if (!S_ISREG(child->mode)) {
+    if (S_ISDIR(child->mode)) {
         return -EISDIR;
     }
     if (parent == NULL) {
@@ -538,6 +545,79 @@ static int tmpfs_rename(const char *oldpath, const char *newpath, unsigned int f
     return 0;
 }
 
+static int tmpfs_symlink(const char *target, const char *linkpath) {
+    struct tmpfs_state *state = TMPFS_DATA;
+    struct tmpfs_inode *parent;
+    char name[TMPFS_NAME_MAX_LENGTH + 1];
+    struct tmpfs_inode *existing;
+
+    int ret = path_lookup(&state->root, linkpath, &parent, name, &existing);
+    if (ret != 0) {
+        return ret;
+    }
+    if (existing != NULL) {
+        return -EEXIST;
+    }
+    if (parent == NULL) {
+        return -EINVAL;
+    }
+
+    if (parent->content.dir.entries_size == parent->content.dir.entries_capacity) {
+        int new_cap = parent->content.dir.entries_capacity * 2;
+        struct tmpfs_dirent *new_entries = realloc(parent->content.dir.entries, new_cap * sizeof(struct tmpfs_dirent));
+        if (!new_entries) {
+            return -ENOMEM;
+        }
+        parent->content.dir.entries = new_entries;
+        parent->content.dir.entries_capacity = new_cap;
+    }
+
+    struct tmpfs_dirent *new_entry = &parent->content.dir.entries[parent->content.dir.entries_size];
+    strncpy(new_entry->name, name, TMPFS_NAME_MAX_LENGTH);
+    new_entry->name[TMPFS_NAME_MAX_LENGTH] = '\0';
+
+    struct tmpfs_inode *inode = &new_entry->inode;
+    inode->mode = S_IFLNK | 0777;
+    inode->uid = getuid();
+    inode->gid = getgid();
+    time_t now = time(NULL);
+    inode->atime = now;
+    inode->mtime = now;
+    inode->ctime = now;
+
+    char *target_copy = strdup(target);
+    if (!target_copy) {
+        return -ENOMEM;
+    }
+    inode->content.symlink.target = target_copy;
+
+    parent->content.dir.entries_size++;
+    parent->mtime = now;
+    parent->ctime = now;
+
+    return 0;
+}
+
+static int tmpfs_readlink(const char *path, char *buf, size_t size) {
+    struct tmpfs_state *state = TMPFS_DATA;
+    struct tmpfs_inode *inode = find_inode(&state->root, path);
+    if (!inode) {
+        return -ENOENT;
+    }
+    if (!S_ISLNK(inode->mode)) {
+        return -EINVAL;
+    }
+
+    char *target = inode->content.symlink.target;
+    size_t len = strlen(target);
+    if (len >= size) {
+        len = size - 1;
+    }
+    memcpy(buf, target, len);
+    buf[len] = '\0';
+    return 0;
+}
+
 static void tmpfs_destroy(void *private_data) {
     struct tmpfs_state *state = TMPFS_DATA;
     // TODO: recursively free all inodes
@@ -557,6 +637,8 @@ struct fuse_operations tmpfs_oper = {
     .rmdir = tmpfs_rmdir,
     .unlink = tmpfs_unlink,
     .rename = tmpfs_rename,
+    .symlink = tmpfs_symlink,
+    .readlink = tmpfs_readlink,
     .destroy = tmpfs_destroy,
 };
 
