@@ -62,9 +62,10 @@ int main(int argc, char *argv[]) {
     state->root.mode = S_IFDIR | 0755;
     state->root.uid = getuid();
     state->root.gid = getgid();
-    clock_gettime(CLOCK_REALTIME, &state->root.atime);
-    state->root.mtime = state->root.atime;
-    state->root.ctime = state->root.atime;
+    time_t now = time(NULL);
+    state->root.atime = now;
+    state->root.mtime = now;
+    state->root.ctime = now;
     state->root.content.dir.entries = malloc(16 * sizeof(struct tmpfs_dirent));
     state->root.content.dir.entries_size = 0;
     state->root.content.dir.entries_capacity = 16;
