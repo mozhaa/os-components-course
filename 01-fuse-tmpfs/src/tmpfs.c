@@ -309,6 +309,55 @@ static int tmpfs_mkdir(const char *path, mode_t mode) {
     return 0;
 }
 
+static int tmpfs_rmdir(const char *path) {
+    struct tmpfs_state *state = TMPFS_DATA;
+    struct tmpfs_inode *parent;
+    char name[TMPFS_NAME_MAX_LENGTH + 1];
+    struct tmpfs_inode *child;
+
+    int ret = path_lookup(&state->root, path, &parent, name, &child);
+    if (ret != 0) {
+        return ret;
+    }
+    if (child == NULL) {
+        return -ENOENT;
+    }
+    if (!S_ISDIR(child->mode)) {
+        return -ENOTDIR;
+    }
+    if (child->content.dir.entries_size != 0) {
+        return -ENOTEMPTY;
+    }
+    if (parent == NULL) {
+        return -EBUSY;
+    }
+
+    int index = -1;
+    for (int i = 0; i < parent->content.dir.entries_size; i++) {
+        if (strcmp(parent->content.dir.entries[i].name, name) == 0) {
+            index = i;
+            break;
+        }
+    }
+    if (index == -1) {
+        return -ENOENT;
+    }
+
+    free(child->content.dir.entries);
+
+    for (int i = index; i < parent->content.dir.entries_size - 1; i++) {
+        parent->content.dir.entries[i] = parent->content.dir.entries[i + 1];
+    }
+    parent->content.dir.entries_size--;
+    parent->content.dir.subdir_count--;
+
+    time_t now = time(NULL);
+    parent->mtime = now;
+    parent->ctime = now;
+
+    return 0;
+}
+
 static void tmpfs_destroy(void *private_data) {
     struct tmpfs_state *state = TMPFS_DATA;
     // TODO: recursively free all inodes
@@ -325,6 +374,7 @@ struct fuse_operations tmpfs_oper = {
     .truncate = tmpfs_truncate,
     .utimens = tmpfs_utimens,
     .mkdir = tmpfs_mkdir,
+    .rmdir = tmpfs_rmdir,
     .destroy = tmpfs_destroy,
 };
 
