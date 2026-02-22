@@ -544,6 +544,7 @@ static int tmpfs_rename(const char *oldpath, const char *newpath, unsigned int f
             return -ENOENT;
         }
 
+        int dst_mode = dst_inode->mode;
         dst_inode->nlink--;
         if (dst_inode->nlink == 0) {
             free_inode_content(dst_inode);
@@ -554,7 +555,7 @@ static int tmpfs_rename(const char *oldpath, const char *newpath, unsigned int f
             dst_parent->content.dir.entries[i] = dst_parent->content.dir.entries[i + 1];
         }
         dst_parent->content.dir.entries_size--;
-        if (S_ISDIR(dst_inode->mode)) {
+        if (S_ISDIR(dst_mode)) {
             dst_parent->nlink--;
         }
     }
