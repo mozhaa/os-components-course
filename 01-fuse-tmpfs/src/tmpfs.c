@@ -46,13 +46,37 @@ int tmpfs_getattr(const char *path, struct stat *statbuf, struct fuse_file_info 
     return 0;
 }
 
+int tmpfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi,
+                  enum fuse_readdir_flags flags) {
+    struct tmpfs_state *state = TMPFS_DATA;
+    struct tmpfs_inode *dir = find_inode(&state->root, path);
+    if (!dir)
+        return -ENOENT;
+    if (!S_ISDIR(dir->mode))
+        return -ENOTDIR;
+
+    filler(buf, ".", NULL, 0, 0);
+    filler(buf, "..", NULL, 0, 0);
+
+    for (int i = 0; i < dir->content.dir.entries_size; i++) {
+        struct tmpfs_dirent *entry = &dir->content.dir.entries[i];
+        filler(buf, entry->name, NULL, 0, 0);
+    }
+
+    return 0;
+}
+
 void tmpfs_destroy(void *private_data) {
     struct tmpfs_state *state = TMPFS_DATA;
     // TODO: recursively free all inodes
     free(state);
 }
 
-struct fuse_operations tmpfs_oper = {.getattr = tmpfs_getattr, .destroy = tmpfs_destroy};
+struct fuse_operations tmpfs_oper = {
+    .getattr = tmpfs_getattr,
+    .readdir = tmpfs_readdir,
+    .destroy = tmpfs_destroy,
+};
 
 int main(int argc, char *argv[]) {
     if ((getuid() == 0) || (geteuid() == 0)) {
