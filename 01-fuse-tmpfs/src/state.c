@@ -33,6 +33,11 @@ int path_lookup(struct tmpfs_inode *root, const char *path, struct tmpfs_inode *
     char *last_token = NULL;
 
     while (token) {
+        if (strlen(token) > TMPFS_NAME_MAX_LENGTH) {
+            free(path_copy);
+            return -ENAMETOOLONG;
+        }
+
         last_token = token;
 
         if (!S_ISDIR(current->mode)) {
