@@ -558,6 +558,9 @@ static int tmpfs_rename(const char *oldpath, const char *newpath, unsigned int f
         if (S_ISDIR(dst_mode)) {
             dst_parent->nlink--;
         }
+        if (dst_parent == src_parent && src_index > dst_index) {
+            src_index--;
+        }
     }
 
     struct tmpfs_dirent src_entry = src_parent->content.dir.entries[src_index];
