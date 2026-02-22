@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Iinclude -Wall -Werror
+CFLAGS = -Iinclude -Wall -Werror -g
 LDFLAGS = `pkg-config fuse3 --libs`
 PKG_CFLAGS = `pkg-config fuse3 --cflags`
 
