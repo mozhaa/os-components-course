@@ -1,6 +1,10 @@
 #include <errno.h>
 #include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "params.h"
 #include "state.h"
@@ -38,4 +42,19 @@ int tmpfs_getattr(const char *path, struct stat *statbuf, struct fuse_file_info 
     }
 
     return 0;
+}
+
+struct fuse_operations tmpfs_oper = {.getattr = tmpfs_getattr};
+
+int main(int argc, char *argv[]) {
+    if ((getuid() == 0) || (geteuid() == 0)) {
+        fprintf(stderr, "Running tmpfs as root is not allowed\n");
+        return -1;
+    }
+
+    struct tmpfs_inode *root = malloc(sizeof(struct tmpfs_inode));
+    root->mode = __S_IFDIR;
+    struct tmpfs_state state = {.root = root};
+
+    return fuse_main(argc, argv, &tmpfs_oper, &state);
 }
