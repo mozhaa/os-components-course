@@ -1,5 +1,6 @@
 #include "state.h"
 
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -23,11 +24,11 @@ struct tmpfs_inode *find_inode(struct tmpfs_inode *root, const char *path) {
         }
 
         struct tmpfs_dirent *entries = current->content.dir.entries;
-        int found = 0;
+        bool found = false;
         for (int i = 0; i < current->content.dir.entries_size; i++) {
-            if (strcmp(entries[i].name, token) == 0) {
-                current = entries[i].inode;
-                found = 1;
+            if (strncmp(entries[i].name, token, TMPFS_NAME_MAX_LENGTH) == 0) {
+                current = &entries[i].inode;
+                found = true;
                 break;
             }
         }

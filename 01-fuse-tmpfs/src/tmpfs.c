@@ -15,7 +15,7 @@ int tmpfs_getattr(const char *path, struct stat *statbuf, struct fuse_file_info 
     (void)fi;
 
     struct tmpfs_state *state = TMPFS_DATA;
-    struct tmpfs_inode *inode = find_inode(state->root, path);
+    struct tmpfs_inode *inode = find_inode(&state->root, path);
     if (!inode)
         return -ENOENT;
 
@@ -44,7 +44,13 @@ int tmpfs_getattr(const char *path, struct stat *statbuf, struct fuse_file_info 
     return 0;
 }
 
-struct fuse_operations tmpfs_oper = {.getattr = tmpfs_getattr};
+void tmpfs_destroy(void *private_data) {
+    struct tmpfs_state *state = private_data;
+    // TODO: recursively free all inodes
+    free(state);
+}
+
+struct fuse_operations tmpfs_oper = {.getattr = tmpfs_getattr, .destroy = tmpfs_destroy};
 
 int main(int argc, char *argv[]) {
     if ((getuid() == 0) || (geteuid() == 0)) {
@@ -52,9 +58,16 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    struct tmpfs_inode *root = malloc(sizeof(struct tmpfs_inode));
-    root->mode = __S_IFDIR;
-    struct tmpfs_state state = {.root = root};
+    struct tmpfs_state *state = malloc(sizeof(struct tmpfs_state));
+    state->root.mode = S_IFDIR | 0755;
+    state->root.uid = getuid();
+    state->root.gid = getgid();
+    clock_gettime(CLOCK_REALTIME, &state->root.atime);
+    state->root.mtime = state->root.atime;
+    state->root.ctime = state->root.atime;
+    state->root.content.dir.entries = malloc(16 * sizeof(struct tmpfs_dirent));
+    state->root.content.dir.entries_size = 0;
+    state->root.content.dir.entries_capacity = 16;
 
     return fuse_main(argc, argv, &tmpfs_oper, &state);
 }

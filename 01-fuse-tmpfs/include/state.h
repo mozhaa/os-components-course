@@ -7,6 +7,8 @@
 
 #include <fuse.h>
 
+#define TMPFS_NAME_MAX_LENGTH 63
+
 struct tmpfs_inode {
     int mode;
     uid_t uid;
@@ -27,12 +29,12 @@ struct tmpfs_inode {
 };
 
 struct tmpfs_dirent {
-    char *name;
-    struct tmpfs_inode *inode;
+    char name[TMPFS_NAME_MAX_LENGTH + 1];
+    struct tmpfs_inode inode;
 };
 
 struct tmpfs_state {
-    struct tmpfs_inode *root;
+    struct tmpfs_inode root;
 };
 
 #define TMPFS_DATA ((struct tmpfs_state *)fuse_get_context()->private_data)
