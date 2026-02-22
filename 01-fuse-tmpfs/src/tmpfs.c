@@ -5,6 +5,8 @@
 #include "params.h"
 #include "state.h"
 
+#include <fuse.h>
+
 int tmpfs_getattr(const char *path, struct stat *statbuf, struct fuse_file_info *fi) {
     (void)fi;
 

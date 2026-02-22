@@ -3,6 +3,10 @@
 
 #include <sys/types.h>
 
+#include "params.h"
+
+#include <fuse.h>
+
 struct tmpfs_inode {
     int mode;
     uid_t uid;
