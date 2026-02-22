@@ -66,6 +66,54 @@ int tmpfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t off
     return 0;
 }
 
+static int tmpfs_mknod(const char *path, mode_t mode, dev_t dev) {
+    struct tmpfs_state *state = TMPFS_DATA;
+    struct tmpfs_inode *parent;
+    char name[TMPFS_NAME_MAX_LENGTH + 1];
+    struct tmpfs_inode *existing;
+
+    int ret = path_lookup(&state->root, path, &parent, name, &existing);
+    if (ret != 0)
+        return ret;
+    if (existing != NULL)
+        return -EEXIST;
+    if (parent == NULL)
+        return -EINVAL;
+
+    if (parent->content.dir.entries_size == parent->content.dir.entries_capacity) {
+        int new_cap = parent->content.dir.entries_capacity * 2;
+        struct tmpfs_dirent *new_entries = realloc(parent->content.dir.entries, new_cap * sizeof(struct tmpfs_dirent));
+        if (!new_entries)
+            return -ENOMEM;
+        parent->content.dir.entries = new_entries;
+        parent->content.dir.entries_capacity = new_cap;
+    }
+
+    struct tmpfs_dirent *new_entry = &parent->content.dir.entries[parent->content.dir.entries_size];
+    strncpy(new_entry->name, name, TMPFS_NAME_MAX_LENGTH);
+    new_entry->name[TMPFS_NAME_MAX_LENGTH] = '\0';
+
+    struct tmpfs_inode *inode = &new_entry->inode;
+    inode->mode = mode;
+    inode->uid = getuid();
+    inode->gid = getgid();
+    time_t now = time(NULL);
+    inode->atime = now;
+    inode->mtime = now;
+    inode->ctime = now;
+
+    if (S_ISREG(mode)) {
+        inode->content.file.size = 0;
+        inode->content.file.data = NULL;
+    } else {
+        inode->content.file.size = 0;
+        inode->content.file.data = NULL;
+    }
+
+    parent->content.dir.entries_size++;
+    return 0;
+}
+
 void tmpfs_destroy(void *private_data) {
     struct tmpfs_state *state = TMPFS_DATA;
     // TODO: recursively free all inodes
@@ -75,6 +123,7 @@ void tmpfs_destroy(void *private_data) {
 struct fuse_operations tmpfs_oper = {
     .getattr = tmpfs_getattr,
     .readdir = tmpfs_readdir,
+    .mknod = tmpfs_mknod,
     .destroy = tmpfs_destroy,
 };
 

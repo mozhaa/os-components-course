@@ -39,6 +39,9 @@ struct tmpfs_state {
 
 #define TMPFS_DATA ((struct tmpfs_state *)fuse_get_context()->private_data)
 
+int path_lookup(struct tmpfs_inode *root, const char *path, struct tmpfs_inode **parent, char *name,
+                struct tmpfs_inode **child);
+
 struct tmpfs_inode *find_inode(struct tmpfs_inode *root, const char *path);
 
 #endif // TMPFS_STATE_H_
