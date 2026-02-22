@@ -24,6 +24,7 @@ struct tmpfs_inode {
             struct tmpfs_dirent *entries;
             int entries_size;
             int entries_capacity;
+            int subdir_count;
         } dir;
     } content;
 };

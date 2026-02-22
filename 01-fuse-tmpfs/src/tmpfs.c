@@ -230,7 +230,60 @@ static int tmpfs_truncate(const char *path, off_t size, struct fuse_file_info *f
     return 0;
 }
 
-void tmpfs_destroy(void *private_data) {
+static void init_dir(struct tmpfs_inode *inode, int mode) {
+    inode->mode = S_IFDIR | (mode & 07777);
+    inode->uid = getuid();
+    inode->gid = getgid();
+    time_t now = time(NULL);
+    inode->atime = now;
+    inode->mtime = now;
+    inode->ctime = now;
+
+    inode->content.dir.entries = malloc(16 * sizeof(struct tmpfs_dirent));
+    inode->content.dir.entries_size = 0;
+    inode->content.dir.entries_capacity = 16;
+    inode->content.dir.subdir_count = 0;
+}
+
+static int tmpfs_mkdir(const char *path, mode_t mode) {
+    struct tmpfs_state *state = TMPFS_DATA;
+    struct tmpfs_inode *parent;
+    char name[TMPFS_NAME_MAX_LENGTH + 1];
+    struct tmpfs_inode *existing;
+
+    int ret = path_lookup(&state->root, path, &parent, name, &existing);
+    if (ret != 0)
+        return ret;
+    if (existing != NULL)
+        return -EEXIST;
+    if (parent == NULL)
+        return -EINVAL;
+
+    if (parent->content.dir.entries_size == parent->content.dir.entries_capacity) {
+        int new_cap = parent->content.dir.entries_capacity * 2;
+        struct tmpfs_dirent *new_entries = realloc(parent->content.dir.entries, new_cap * sizeof(struct tmpfs_dirent));
+        if (!new_entries)
+            return -ENOMEM;
+        parent->content.dir.entries = new_entries;
+        parent->content.dir.entries_capacity = new_cap;
+    }
+
+    struct tmpfs_dirent *new_entry = &parent->content.dir.entries[parent->content.dir.entries_size];
+    strncpy(new_entry->name, name, TMPFS_NAME_MAX_LENGTH);
+    new_entry->name[TMPFS_NAME_MAX_LENGTH] = '\0';
+
+    struct tmpfs_inode *inode = &new_entry->inode;
+    init_dir(inode, mode);
+
+    parent->content.dir.entries_size++;
+    parent->content.dir.subdir_count++;
+    parent->mtime = inode->ctime;
+    parent->ctime = inode->ctime;
+
+    return 0;
+}
+
+static void tmpfs_destroy(void *private_data) {
     struct tmpfs_state *state = TMPFS_DATA;
     // TODO: recursively free all inodes
     free(state);
@@ -245,6 +298,7 @@ struct fuse_operations tmpfs_oper = {
     .write = tmpfs_write,
     .truncate = tmpfs_truncate,
     .utimens = tmpfs_utimens,
+    .mkdir = tmpfs_mkdir,
     .destroy = tmpfs_destroy,
 };
 
@@ -255,16 +309,7 @@ int main(int argc, char *argv[]) {
     }
 
     struct tmpfs_state *state = malloc(sizeof(struct tmpfs_state));
-    state->root.mode = S_IFDIR | 0755;
-    state->root.uid = getuid();
-    state->root.gid = getgid();
-    time_t now = time(NULL);
-    state->root.atime = now;
-    state->root.mtime = now;
-    state->root.ctime = now;
-    state->root.content.dir.entries = malloc(16 * sizeof(struct tmpfs_dirent));
-    state->root.content.dir.entries_size = 0;
-    state->root.content.dir.entries_capacity = 16;
+    init_dir(&state->root, 0755);
 
     return fuse_main(argc, argv, &tmpfs_oper, state);
 }
