@@ -96,6 +96,7 @@ static int add_dirent(struct tmpfs_inode *dir, const char *name, struct tmpfs_in
 }
 
 static int tmpfs_getattr(const char *path, struct stat *statbuf, struct fuse_file_info *fi) {
+    fprintf(stderr, "tmpfs_getattr(path=%s, fi=%p)\n", path, (void *)fi);
     (void)fi;
 
     struct tmpfs_state *state = TMPFS_DATA;
@@ -133,6 +134,7 @@ static int tmpfs_getattr(const char *path, struct stat *statbuf, struct fuse_fil
 
 static int tmpfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi,
                          enum fuse_readdir_flags flags) {
+    fprintf(stderr, "tmpfs_readdir(path=%s, offset=%ld, fi=%p, flags=%d)\n", path, (long)offset, (void *)fi, flags);
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *dir = find_inode(state->root, path);
     if (!dir) {
@@ -154,6 +156,7 @@ static int tmpfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, of
 }
 
 static int tmpfs_mknod(const char *path, mode_t mode, dev_t dev) {
+    fprintf(stderr, "tmpfs_mknod(path=%s, mode=%o, dev=%ld)\n", path, mode, (long)dev);
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *parent;
     char name[TMPFS_NAME_MAX_LENGTH + 1];
@@ -190,6 +193,7 @@ static int tmpfs_mknod(const char *path, mode_t mode, dev_t dev) {
 }
 
 static int tmpfs_open(const char *path, struct fuse_file_info *fi) {
+    fprintf(stderr, "tmpfs_open(path=%s, fi=%p)\n", path, (void *)fi);
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *inode = find_inode(state->root, path);
     if (!inode) {
@@ -205,6 +209,7 @@ static int tmpfs_open(const char *path, struct fuse_file_info *fi) {
 }
 
 static int tmpfs_utimens(const char *path, const struct timespec tv[2], struct fuse_file_info *fi) {
+    fprintf(stderr, "tmpfs_utimens(path=%s, fi=%p)\n", path, (void *)fi);
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *inode = find_inode(state->root, path);
     if (!inode) {
@@ -235,6 +240,7 @@ static int tmpfs_utimens(const char *path, const struct timespec tv[2], struct f
 }
 
 static int tmpfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
+    fprintf(stderr, "tmpfs_read(path=%s, size=%zu, offset=%ld, fi=%p)\n", path, size, (long)offset, (void *)fi);
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *inode = find_inode(state->root, path);
     if (!inode) {
@@ -258,6 +264,7 @@ static int tmpfs_read(const char *path, char *buf, size_t size, off_t offset, st
 }
 
 static int tmpfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
+    fprintf(stderr, "tmpfs_write(path=%s, size=%zu, offset=%ld, fi=%p)\n", path, size, (long)offset, (void *)fi);
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *inode = find_inode(state->root, path);
     if (!inode) {
@@ -287,6 +294,7 @@ static int tmpfs_write(const char *path, const char *buf, size_t size, off_t off
 }
 
 static int tmpfs_truncate(const char *path, off_t size, struct fuse_file_info *fi) {
+    fprintf(stderr, "tmpfs_truncate(path=%s, size=%ld, fi=%p)\n", path, (long)size, (void *)fi);
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *inode = find_inode(state->root, path);
     if (!inode) {
@@ -322,6 +330,7 @@ static int tmpfs_truncate(const char *path, off_t size, struct fuse_file_info *f
 }
 
 static int tmpfs_mkdir(const char *path, mode_t mode) {
+    fprintf(stderr, "tmpfs_mkdir(path=%s, mode=%o)\n", path, mode);
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *parent;
     char name[TMPFS_NAME_MAX_LENGTH + 1];
@@ -357,6 +366,7 @@ static int tmpfs_mkdir(const char *path, mode_t mode) {
 }
 
 static int tmpfs_rmdir(const char *path) {
+    fprintf(stderr, "tmpfs_rmdir(path=%s)\n", path);
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *parent;
     char name[TMPFS_NAME_MAX_LENGTH + 1];
@@ -405,6 +415,7 @@ static int tmpfs_rmdir(const char *path) {
 }
 
 static int tmpfs_unlink(const char *path) {
+    fprintf(stderr, "tmpfs_unlink(path=%s)\n", path);
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *parent;
     char name[TMPFS_NAME_MAX_LENGTH + 1];
@@ -452,6 +463,7 @@ static int tmpfs_unlink(const char *path) {
 }
 
 static int tmpfs_rename(const char *oldpath, const char *newpath, unsigned int flags) {
+    fprintf(stderr, "tmpfs_rename(oldpath=%s, newpath=%s, flags=%u)\n", oldpath, newpath, flags);
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *src_parent;
     char src_name[TMPFS_NAME_MAX_LENGTH + 1];
@@ -590,6 +602,7 @@ static int tmpfs_rename(const char *oldpath, const char *newpath, unsigned int f
 }
 
 static int tmpfs_symlink(const char *target, const char *linkpath) {
+    fprintf(stderr, "tmpfs_symlink(target=%s, linkpath=%s)\n", target, linkpath);
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *parent;
     char name[TMPFS_NAME_MAX_LENGTH + 1];
@@ -631,6 +644,7 @@ static int tmpfs_symlink(const char *target, const char *linkpath) {
 }
 
 static int tmpfs_readlink(const char *path, char *buf, size_t size) {
+    fprintf(stderr, "tmpfs_readlink(path=%s, size=%zu)\n", path, size);
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *inode = find_inode(state->root, path);
     if (!inode) {
@@ -651,6 +665,7 @@ static int tmpfs_readlink(const char *path, char *buf, size_t size) {
 }
 
 static int tmpfs_link(const char *oldpath, const char *newpath) {
+    fprintf(stderr, "tmpfs_link(oldpath=%s, newpath=%s)\n", oldpath, newpath);
     struct tmpfs_state *state = TMPFS_DATA;
     struct tmpfs_inode *src_inode = find_inode(state->root, oldpath);
     if (!src_inode) {
@@ -687,6 +702,7 @@ static int tmpfs_link(const char *oldpath, const char *newpath) {
 }
 
 static void tmpfs_destroy(void *private_data) {
+    fprintf(stderr, "tmpfs_destroy(private_data=%p)\n", private_data);
     struct tmpfs_state *state = private_data;
     if (state->root) {
         recursive_free_inode(state->root);
