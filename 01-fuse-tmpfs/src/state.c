@@ -58,7 +58,7 @@ int path_lookup(struct tmpfs_inode *root, const char *path, struct tmpfs_inode *
                 }
                 if (name) {
                     strncpy(name, token, TMPFS_NAME_MAX_LENGTH);
-                    name[TMPFS_NAME_MAX_LENGTH + 1] = 0;
+                    name[TMPFS_NAME_MAX_LENGTH] = 0;
                 }
                 if (child) {
                     *child = NULL;
@@ -78,7 +78,7 @@ int path_lookup(struct tmpfs_inode *root, const char *path, struct tmpfs_inode *
     }
     if (name) {
         strncpy(name, last_token, TMPFS_NAME_MAX_LENGTH);
-        name[TMPFS_NAME_MAX_LENGTH + 1] = 0;
+        name[TMPFS_NAME_MAX_LENGTH] = 0;
     }
     if (child) {
         *child = current;
