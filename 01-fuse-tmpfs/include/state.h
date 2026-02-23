@@ -30,6 +30,7 @@ struct tmpfs_inode {
         struct {
             char *target;
         } symlink;
+        dev_t dev;
     } content;
 };
 

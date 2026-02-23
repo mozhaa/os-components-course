@@ -51,6 +51,9 @@ static struct tmpfs_inode *create_inode(mode_t mode) {
     } else if (S_ISLNK(mode)) {
         inode->nlink = 1;
         inode->content.symlink.target = NULL;
+    } else if (S_ISBLK(mode) || S_ISCHR(mode)) {
+        inode->content.dev = 0;
+        inode->nlink = 1;
     } else {
         inode->nlink = 1;
     }
@@ -131,8 +134,13 @@ static int tmpfs_getattr(const char *path, struct stat *statbuf, struct fuse_fil
     } else if (S_ISLNK(inode->mode)) {
         statbuf->st_size = strlen(inode->content.symlink.target);
         statbuf->st_blocks = (statbuf->st_size + 511) / 512;
+    } else if (S_ISBLK(inode->mode) || S_ISCHR(inode->mode)) {
+        statbuf->st_rdev = inode->content.dev;
+        statbuf->st_size = 0;
+        statbuf->st_blocks = 0;
     } else {
-        return -EINVAL;
+        statbuf->st_size = 0;
+        statbuf->st_blocks = 0;
     }
 
     return 0;
@@ -168,7 +176,7 @@ static int tmpfs_mknod(const char *path, mode_t mode, dev_t dev) {
     char name[TMPFS_NAME_MAX_LENGTH + 1];
     struct tmpfs_inode *existing;
 
-    if (!S_ISREG(mode) && !S_ISDIR(mode) && !S_ISLNK(mode)) {
+    if (S_ISDIR(mode) || S_ISLNK(mode)) {
         return -EINVAL;
     }
 
@@ -186,6 +194,10 @@ static int tmpfs_mknod(const char *path, mode_t mode, dev_t dev) {
     struct tmpfs_inode *inode = create_inode(mode);
     if (!inode) {
         return -ENOMEM;
+    }
+
+    if (S_ISBLK(mode) || S_ISCHR(mode)) {
+        inode->content.dev = dev;
     }
 
     ret = add_dirent(parent, name, inode);
