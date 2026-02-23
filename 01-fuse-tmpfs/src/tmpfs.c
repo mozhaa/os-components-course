@@ -24,8 +24,14 @@ static struct tmpfs_inode *create_inode(mode_t mode) {
         return NULL;
     }
     inode->mode = mode;
-    inode->uid = getuid();
-    inode->gid = getgid();
+    struct fuse_context *ctx = fuse_get_context();
+    if (ctx) {
+        inode->uid = ctx->uid;
+        inode->gid = ctx->gid;
+    } else {
+        inode->uid = getuid();
+        inode->gid = getgid();
+    }
     update_inode_mtime_ctime(inode);
     inode->atime = inode->mtime;
 
@@ -701,6 +707,33 @@ static int tmpfs_link(const char *oldpath, const char *newpath) {
     return 0;
 }
 
+static int tmpfs_chown(const char *path, uid_t uid, gid_t gid, struct fuse_file_info *fi) {
+    struct tmpfs_state *state = TMPFS_DATA;
+    struct tmpfs_inode *inode = find_inode(state->root, path);
+    if (!inode) {
+        return -ENOENT;
+    }
+    if (uid != (uid_t)-1) {
+        inode->uid = uid;
+    }
+    if (gid != (gid_t)-1) {
+        inode->gid = gid;
+    }
+    inode->ctime = time(NULL);
+    return 0;
+}
+
+static int tmpfs_chmod(const char *path, mode_t mode, struct fuse_file_info *fi) {
+    struct tmpfs_state *state = TMPFS_DATA;
+    struct tmpfs_inode *inode = find_inode(state->root, path);
+    if (!inode) {
+        return -ENOENT;
+    }
+    inode->mode = (inode->mode & S_IFMT) | (mode & 07777);
+    inode->ctime = time(NULL);
+    return 0;
+}
+
 static void tmpfs_destroy(void *private_data) {
     fprintf(stderr, "tmpfs_destroy(private_data=%p)\n", private_data);
     struct tmpfs_state *state = private_data;
@@ -726,6 +759,8 @@ struct fuse_operations tmpfs_oper = {
     .symlink = tmpfs_symlink,
     .readlink = tmpfs_readlink,
     .link = tmpfs_link,
+    .chown = tmpfs_chown,
+    .chmod = tmpfs_chmod,
     .destroy = tmpfs_destroy,
 };
 
