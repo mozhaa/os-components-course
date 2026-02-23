@@ -294,6 +294,10 @@ static int tmpfs_write(const char *path, const char *buf, size_t size, off_t off
 
     size_t new_size = offset + size;
     if (new_size > inode->content.file.size) {
+        size_t size_increase = new_size - inode->content.file.size;
+        if (state->used_size + size_increase > state->max_size) {
+            return -ENOSPC;
+        }
         char *new_data = realloc(inode->content.file.data, new_size);
         if (!new_data) {
             return -ENOMEM;
@@ -303,6 +307,7 @@ static int tmpfs_write(const char *path, const char *buf, size_t size, off_t off
             memset(inode->content.file.data + inode->content.file.size, 0, offset - inode->content.file.size);
         }
         inode->content.file.size = new_size;
+        state->used_size += size_increase;
     }
 
     memcpy(inode->content.file.data + offset, buf, size);
@@ -325,6 +330,7 @@ static int tmpfs_truncate(const char *path, off_t size, struct fuse_file_info *f
     if (size == 0) {
         free(inode->content.file.data);
         inode->content.file.data = NULL;
+        state->used_size -= inode->content.file.size;
         inode->content.file.size = 0;
     } else if (size < inode->content.file.size) {
         char *new_data = realloc(inode->content.file.data, size);
@@ -332,8 +338,13 @@ static int tmpfs_truncate(const char *path, off_t size, struct fuse_file_info *f
             return -ENOMEM;
         }
         inode->content.file.data = new_data;
+        state->used_size -= (inode->content.file.size - size);
         inode->content.file.size = size;
     } else if (size > inode->content.file.size) {
+        size_t size_increase = size - inode->content.file.size;
+        if (state->used_size + size_increase > state->max_size) {
+            return -ENOSPC;
+        }
         char *new_data = realloc(inode->content.file.data, size);
         if (!new_data) {
             return -ENOMEM;
@@ -341,6 +352,7 @@ static int tmpfs_truncate(const char *path, off_t size, struct fuse_file_info *f
         memset(new_data + inode->content.file.size, 0, size - inode->content.file.size);
         inode->content.file.data = new_data;
         inode->content.file.size = size;
+        state->used_size += size_increase;
     }
 
     update_inode_mtime_ctime(inode);
@@ -466,6 +478,9 @@ static int tmpfs_unlink(const char *path) {
 
     child->nlink--;
     if (child->nlink == 0) {
+        if (S_ISREG(child->mode)) {
+            state->used_size -= child->content.file.size;
+        }
         free_inode_content(child);
         free(child);
     }
@@ -746,6 +761,21 @@ static int tmpfs_chmod(const char *path, mode_t mode, struct fuse_file_info *fi)
     return 0;
 }
 
+static int tmpfs_statfs(const char *path, struct statvfs *st) {
+    struct tmpfs_state *state = TMPFS_DATA;
+    memset(st, 0, sizeof(*st));
+    st->f_bsize = 4096;
+    st->f_frsize = 4096;
+    st->f_blocks = state->max_size / 4096;
+    st->f_bfree = (state->max_size - state->used_size) / 4096;
+    st->f_bavail = st->f_bfree;
+    st->f_files = 1024 * 1024;
+    st->f_ffree = st->f_files;
+    st->f_favail = st->f_files;
+    st->f_namemax = TMPFS_NAME_MAX_LENGTH;
+    return 0;
+}
+
 static void tmpfs_destroy(void *private_data) {
     fprintf(stderr, "tmpfs_destroy(private_data=%p)\n", private_data);
     struct tmpfs_state *state = private_data;
@@ -771,6 +801,7 @@ struct fuse_operations tmpfs_oper = {
     .symlink = tmpfs_symlink,
     .readlink = tmpfs_readlink,
     .link = tmpfs_link,
+    .statfs = tmpfs_statfs,
     .chown = tmpfs_chown,
     .chmod = tmpfs_chmod,
     .destroy = tmpfs_destroy,
@@ -791,6 +822,8 @@ int main(int argc, char *argv[]) {
         free(state);
         return -1;
     }
+    state->max_size = 64 * 1024 * 1024;
+    state->used_size = 0;
 
     return fuse_main(argc, argv, &tmpfs_oper, state);
 }

@@ -41,6 +41,8 @@ struct tmpfs_dirent {
 
 struct tmpfs_state {
     struct tmpfs_inode *root;
+    size_t used_size;
+    size_t max_size;
 };
 
 #define TMPFS_DATA ((struct tmpfs_state *)fuse_get_context()->private_data)
