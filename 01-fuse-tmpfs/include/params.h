@@ -3,4 +3,4 @@
 
 #define FUSE_USE_VERSION 31
 
-#endif // TMPFS_PARAMS_H
+#endif // TMPFS_PARAMS_H_
