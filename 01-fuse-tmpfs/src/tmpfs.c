@@ -80,8 +80,10 @@ static void recursive_free_inode(struct tmpfs_inode *inode) {
             recursive_free_inode(inode->content.dir.entries[i].inode);
         }
     }
-    free_inode_content(inode);
-    free(inode);
+    if (S_ISDIR(inode->mode) || --inode->nlink == 0) {
+        free_inode_content(inode);
+        free(inode);
+    }
 }
 
 static int add_dirent(struct tmpfs_inode *dir, const char *name, struct tmpfs_inode *inode) {
