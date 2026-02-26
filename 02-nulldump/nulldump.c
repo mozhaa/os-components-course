@@ -2,6 +2,7 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/sched.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Vasiliy Mozhaev");
@@ -12,12 +13,17 @@ MODULE_VERSION("0.1");
 #define LINE_WIDTH 16
 static int major;
 
-static ssize_t nulldump_read(struct file *file, char __user *buf, size_t size, loff_t *ppos) { return 0; }
+static ssize_t nulldump_read(struct file *file, char __user *buf, size_t size, loff_t *ppos) {
+    pr_info("nulldump: read of %lu bytes from pid=%d, comm=%s\n", size, current->pid, current->comm);
+    return 0;
+}
 
 static ssize_t nulldump_write(struct file *file, const char __user *data, size_t size, loff_t *ppos) {
     size_t offset = 0;
     unsigned char linebuf[LINE_WIDTH];
     char outbuf[LINE_WIDTH * 4 + 20];
+
+    pr_info("nulldump: write of %lu bytes from pid=%d, comm=%s\n", size, current->pid, current->comm);
 
     while (offset < size) {
         size_t chunk = size - offset;
