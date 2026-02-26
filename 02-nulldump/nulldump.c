@@ -12,7 +12,7 @@ static int major;
 
 static ssize_t nulldump_read(struct file *file, char __user *buf, size_t size, loff_t *ppos) { return 0; }
 
-static ssize_t nulldump_write(struct file *file, const char __user *data, size_t len, loff_t *ppos) { return len; }
+static ssize_t nulldump_write(struct file *file, const char __user *data, size_t size, loff_t *ppos) { return size; }
 
 static struct file_operations nulldump_fops = {
     .owner = THIS_MODULE,
