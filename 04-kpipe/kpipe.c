@@ -3,7 +3,9 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/sched.h>
+#include <linux/wait.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Vasiliy Mozhaev");
@@ -21,7 +23,25 @@ static char *buffer;
 static int cursor = 0;
 static int cur_size = 0;
 
+static DEFINE_MUTEX(kpipe_mutex);
+static DECLARE_WAIT_QUEUE_HEAD(read_wait);
+static DECLARE_WAIT_QUEUE_HEAD(write_wait);
+
 static ssize_t kpipe_read(struct file *file, char __user *buf, size_t size, loff_t *ppos) {
+    mutex_lock(&kpipe_mutex);
+
+    while (cur_size == 0) {
+        if (file->f_flags & O_NONBLOCK) {
+            mutex_unlock(&kpipe_mutex);
+            return -EAGAIN;
+        }
+        mutex_unlock(&kpipe_mutex);
+        if (wait_event_interruptible(read_wait, cur_size > 0)) {
+            return -ERESTARTSYS;
+        }
+        mutex_lock(&kpipe_mutex);
+    }
+
     size = (size < cur_size) ? size : cur_size;
     if (size == 0) {
         return 0;
@@ -43,33 +63,66 @@ static ssize_t kpipe_read(struct file *file, char __user *buf, size_t size, loff
     }
 
     cur_size -= size;
+
+    wake_up(&write_wait);
+    mutex_unlock(&kpipe_mutex);
     return size;
 }
 
 static ssize_t kpipe_write(struct file *file, const char __user *data, size_t size, loff_t *ppos) {
-    int available = capacity - cur_size;
-    if (size > available) {
-        return -ENOSPC;
-    }
+    ssize_t total = 0;
+    mutex_lock(&kpipe_mutex);
 
-    int l_size = (size < (capacity - cursor)) ? size : (capacity - cursor);
-    int r_size = size - l_size;
-
-    if (l_size > 0) {
-        if (copy_from_user(buffer + cursor, data, l_size)) {
-            return -EFAULT;
+    while (total < size) {
+        int available = capacity - cur_size;
+        if (available == 0) {
+            if (file->f_flags & O_NONBLOCK) {
+                if (total == 0) {
+                    mutex_unlock(&kpipe_mutex);
+                    return -EAGAIN;
+                }
+                break;
+            }
+            mutex_unlock(&kpipe_mutex);
+            if (wait_event_interruptible(write_wait, cur_size < capacity)) {
+                if (total == 0) {
+                    return -ERESTARTSYS;
+                } else {
+                    return total;
+                }
+            }
+            mutex_lock(&kpipe_mutex);
+            continue;
         }
-        cursor = (cursor + l_size) % capacity;
-    }
-    if (r_size > 0) {
-        if (copy_from_user(buffer + cursor, data + l_size, r_size)) {
-            return -EFAULT;
+
+        int chunk = (available < (size - total)) ? available : (size - total);
+        int l_size = (chunk < (capacity - cursor)) ? chunk : (capacity - cursor);
+        int r_size = chunk - l_size;
+
+        if (l_size > 0) {
+            if (copy_from_user(buffer + cursor, data + total, l_size)) {
+                mutex_unlock(&kpipe_mutex);
+                return -EFAULT;
+            }
+            cursor = (cursor + l_size) % capacity;
         }
-        cursor = (cursor + r_size) % capacity;
+        if (r_size > 0) {
+            if (copy_from_user(buffer + cursor, data + total + l_size, r_size)) {
+                mutex_unlock(&kpipe_mutex);
+                return -EFAULT;
+            }
+            cursor = (cursor + r_size) % capacity;
+        }
+
+        cur_size += chunk;
+        total += chunk;
+
+        wake_up(&read_wait);
     }
 
-    cur_size += size;
-    return size;
+    mutex_unlock(&kpipe_mutex);
+    wake_up(&read_wait);
+    return total;
 }
 
 static char *kpipe_devnode(const struct device *dev, umode_t *mode) {
