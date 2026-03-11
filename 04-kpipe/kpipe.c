@@ -12,12 +12,12 @@ MODULE_VERSION("0.1");
 
 #define DEVICE_NAME "kpipe"
 #define CLASS_NAME "kpipe"
-#define LINE_WIDTH 16
 
 static int major;
 static unsigned long size = 4096;
 static struct class *kpipe_class = NULL;
 static struct device *kpipe_device = NULL;
+static char *buffer;
 
 static ssize_t kpipe_read(struct file *file, char __user *buf, size_t size, loff_t *ppos) { return 0; }
 
@@ -43,7 +43,7 @@ static int __init kpipe_start(void) {
     if (major < 0) {
         ret = major;
         pr_err("kpipe: failed to register device: %d\n", ret);
-        goto fail_operations;
+        goto fail_chrdev;
     }
 
     kpipe_class = class_create(CLASS_NAME);
@@ -62,22 +62,29 @@ static int __init kpipe_start(void) {
         goto fail_device;
     }
 
-    pr_info("kpipe: created device at /dev/%s\n", DEVICE_NAME);
+    buffer = kzalloc(size, GFP_KERNEL);
+    if (!buffer) {
+        ret = -ENOMEM;
+        goto fail_buffer;
+    }
+
     return 0;
 
+fail_buffer:
+    device_destroy(kpipe_class, MKDEV(major, 0));
 fail_device:
     class_destroy(kpipe_class);
 fail_class:
     unregister_chrdev(major, DEVICE_NAME);
-fail_operations:
+fail_chrdev:
     return ret;
 }
 
 static void __exit kpipe_end(void) {
+    kfree(buffer);
     device_destroy(kpipe_class, MKDEV(major, 0));
     class_destroy(kpipe_class);
     unregister_chrdev(major, DEVICE_NAME);
-    pr_info("kpipe: unregistered device\n");
 }
 
 module_param(size, ulong, 0644);
