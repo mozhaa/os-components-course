@@ -234,7 +234,7 @@ static ssize_t membuf_write(struct file *file, const char __user *buf, size_t co
 
     if (*ppos >= dev->size) {
         up_write(&dev->lock);
-        return 0;
+        return count ? -ENOSPC : 0;
     }
 
     size_t writable = min(count, dev->size - (size_t)*ppos);
