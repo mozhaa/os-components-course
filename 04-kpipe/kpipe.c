@@ -21,9 +21,56 @@ static char *buffer;
 static int cursor = 0;
 static int cur_size = 0;
 
-static ssize_t kpipe_read(struct file *file, char __user *buf, size_t size, loff_t *ppos) { return 0; }
+static ssize_t kpipe_read(struct file *file, char __user *buf, size_t size, loff_t *ppos) {
+    size = (size < cur_size) ? size : cur_size;
+    if (size == 0) {
+        return 0;
+    }
 
-static ssize_t kpipe_write(struct file *file, const char __user *data, size_t size, loff_t *ppos) { return size; }
+    int read_cursor = (cursor + capacity - cur_size) % capacity;
+    int l_size = (size < (capacity - read_cursor)) ? size : (capacity - read_cursor);
+    int r_size = size - l_size;
+
+    if (l_size > 0) {
+        if (copy_to_user(buf, buffer + read_cursor, l_size)) {
+            return -EFAULT;
+        }
+    }
+    if (r_size > 0) {
+        if (copy_to_user(buf + l_size, buffer, r_size)) {
+            return -EFAULT;
+        }
+    }
+
+    cur_size -= size;
+    return size;
+}
+
+static ssize_t kpipe_write(struct file *file, const char __user *data, size_t size, loff_t *ppos) {
+    int available = capacity - cur_size;
+    if (size > available) {
+        return -ENOSPC;
+    }
+
+    int l_size = (size < (capacity - cursor)) ? size : (capacity - cursor);
+    int r_size = size - l_size;
+
+    if (l_size > 0) {
+        if (copy_from_user(buffer + cursor, data, l_size)) {
+            return -EFAULT;
+        }
+        cursor = (cursor + l_size) % capacity;
+    }
+    if (r_size > 0) {
+        if (copy_from_user(buffer + cursor, data + l_size, r_size)) {
+            return -EFAULT;
+        }
+        cursor = (cursor + r_size) % capacity;
+    }
+
+    cur_size += size;
+    return size;
+}
 
 static char *kpipe_devnode(const struct device *dev, umode_t *mode) {
     if (mode) {
@@ -64,7 +111,7 @@ static int __init kpipe_start(void) {
         goto fail_device;
     }
 
-    buffer = kzalloc(size, GFP_KERNEL);
+    buffer = kzalloc(capacity, GFP_KERNEL);
     if (!buffer) {
         ret = -ENOMEM;
         goto fail_buffer;
