@@ -7,7 +7,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
-#include <linux/mutex.h>
+#include <linux/rwsem.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 
@@ -27,7 +27,7 @@ static struct membuf_dev {
     struct cdev cdev;
     char *buffer;
     size_t size;
-    struct mutex lock;
+    struct rw_semaphore lock;
     atomic_t open_count;
     bool dying;
 } *membuf_devices[MAX_DEVICES];
@@ -115,11 +115,11 @@ MODULE_PARM_DESC(default_buf_size, "default buffer size");
 
 static ssize_t size_show(struct device *dev, struct device_attribute *attr, char *buf) {
     struct membuf_dev *mdev = dev_get_drvdata(dev);
-    if (mutex_lock_interruptible(&mdev->lock)) {
+    if (down_read_interruptible(&mdev->lock)) {
         return -ERESTARTSYS;
     }
     ssize_t ret = sprintf(buf, "%zu\n", mdev->size);
-    mutex_unlock(&mdev->lock);
+    up_read(&mdev->lock);
     return ret;
 }
 
@@ -135,18 +135,18 @@ static ssize_t size_store(struct device *dev, struct device_attribute *attr, con
         return -EINVAL;
     }
 
-    if (mutex_lock_interruptible(&mdev->lock)) {
+    if (down_write_interruptible(&mdev->lock)) {
         return -ERESTARTSYS;
     }
 
     if (atomic_read(&mdev->open_count) > 0) {
-        mutex_unlock(&mdev->lock);
+        up_write(&mdev->lock);
         return -EBUSY;
     }
 
     char *new_buf = kzalloc(new_size, GFP_KERNEL);
     if (!new_buf) {
-        mutex_unlock(&mdev->lock);
+        up_write(&mdev->lock);
         return -ENOMEM;
     }
 
@@ -157,7 +157,7 @@ static ssize_t size_store(struct device *dev, struct device_attribute *attr, con
     mdev->buffer = new_buf;
     mdev->size = new_size;
 
-    mutex_unlock(&mdev->lock);
+    up_write(&mdev->lock);
     return count;
 }
 
@@ -170,12 +170,12 @@ static int membuf_open(struct inode *inode, struct file *file) {
         mutex_unlock(&list_lock);
         return -ENXIO;
     }
-    if (mutex_lock_interruptible(&dev->lock)) {
+    if (down_read_interruptible(&dev->lock)) {
         mutex_unlock(&list_lock);
         return -ERESTARTSYS;
     }
     atomic_inc(&dev->open_count);
-    mutex_unlock(&dev->lock);
+    up_read(&dev->lock);
     mutex_unlock(&list_lock);
     if (!try_module_get(THIS_MODULE)) {
         atomic_dec(&dev->open_count);
@@ -201,24 +201,25 @@ static ssize_t membuf_read(struct file *file, char __user *buf, size_t count, lo
     size_t available;
     ssize_t ret;
 
-    if (mutex_lock_interruptible(&dev->lock))
+    if (down_read_interruptible(&dev->lock)) {
         return -ERESTARTSYS;
+    }
 
     if (*ppos >= dev->size) {
-        mutex_unlock(&dev->lock);
+        up_read(&dev->lock);
         return 0;
     }
 
     available = min(count, dev->size - (size_t)*ppos);
     if (copy_to_user(buf, dev->buffer + *ppos, available)) {
-        mutex_unlock(&dev->lock);
+        up_read(&dev->lock);
         return -EFAULT;
     }
 
     *ppos += available;
     ret = available;
 
-    mutex_unlock(&dev->lock);
+    up_read(&dev->lock);
     return ret;
 }
 
@@ -227,23 +228,24 @@ static ssize_t membuf_write(struct file *file, const char __user *buf, size_t co
 
     struct membuf_dev *dev = file->private_data;
 
-    if (mutex_lock_interruptible(&dev->lock))
+    if (down_write_interruptible(&dev->lock)) {
         return -ERESTARTSYS;
+    }
 
     if (*ppos >= dev->size) {
-        mutex_unlock(&dev->lock);
+        up_write(&dev->lock);
         return 0;
     }
 
     size_t writable = min(count, dev->size - (size_t)*ppos);
     if (copy_from_user(dev->buffer + *ppos, buf, writable)) {
-        mutex_unlock(&dev->lock);
+        up_write(&dev->lock);
         return -EFAULT;
     }
 
     *ppos += writable;
 
-    mutex_unlock(&dev->lock);
+    up_write(&dev->lock);
     return writable;
 }
 
@@ -329,7 +331,7 @@ static int create_membuf_device(int minor) {
         return -ENOMEM;
     }
     dev->size = default_buf_size;
-    mutex_init(&dev->lock);
+    init_rwsem(&dev->lock);
     atomic_set(&dev->open_count, 0);
     dev->dying = false;
 
@@ -374,7 +376,6 @@ static void destroy_membuf_device(int minor) {
     device_destroy(membuf_class, devt);
     cdev_del(&dev->cdev);
     kfree(dev->buffer);
-    mutex_destroy(&dev->lock);
     kfree(dev);
     membuf_devices[minor] = NULL;
 }
