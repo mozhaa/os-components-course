@@ -15,6 +15,7 @@ MODULE_VERSION("0.1");
 #define LINE_WIDTH 16
 
 static int major;
+static unsigned long size = 4096;
 static struct class *kpipe_class = NULL;
 static struct device *kpipe_device = NULL;
 
@@ -78,6 +79,9 @@ static void __exit kpipe_end(void) {
     unregister_chrdev(major, DEVICE_NAME);
     pr_info("kpipe: unregistered device\n");
 }
+
+module_param(size, ulong, 0644);
+MODULE_PARM_DESC(size, "buffer size");
 
 module_init(kpipe_start);
 module_exit(kpipe_end);
