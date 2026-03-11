@@ -67,6 +67,10 @@ static int __init membuf_init(void) {
         pr_err("membuf: num_devices must be positive\n");
         return -EINVAL;
     }
+    if (default_buf_size <= 0) {
+        pr_err("membuf: default_buf_size must be positive\n");
+        return -EINVAL;
+    }
 
     membuf_devices = kmalloc_array(num_devices, sizeof(struct membuf_dev), GFP_KERNEL);
     if (!membuf_devices) {
