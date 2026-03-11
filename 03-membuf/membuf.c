@@ -135,7 +135,7 @@ static ssize_t size_store(struct device *dev, struct device_attribute *attr, con
         return -EINVAL;
     }
 
-    if (down_write_interruptible(&mdev->lock)) {
+    if (down_write_killable(&mdev->lock)) {
         return -ERESTARTSYS;
     }
 
@@ -228,7 +228,7 @@ static ssize_t membuf_write(struct file *file, const char __user *buf, size_t co
 
     struct membuf_dev *dev = file->private_data;
 
-    if (down_write_interruptible(&dev->lock)) {
+    if (down_write_killable(&dev->lock)) {
         return -ERESTARTSYS;
     }
 
