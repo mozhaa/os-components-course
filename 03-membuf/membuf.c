@@ -90,13 +90,10 @@ static int set_num_devices(const char *val, const struct kernel_param *kp) {
                 membuf_devices[i]->dying = true;
         }
 
-        mutex_unlock(&list_lock);
-
         for (int i = new_count; i < dev_count; i++) {
             destroy_membuf_device(i);
         }
 
-        mutex_lock(&list_lock);
         dev_count = new_count;
         *(int *)kp->arg = new_count;
         mutex_unlock(&list_lock);
