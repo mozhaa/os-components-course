@@ -1,3 +1,4 @@
+#include <linux/atomic.h>
 #include <linux/cdev.h>
 #include <linux/device.h>
 #include <linux/err.h>
@@ -31,16 +32,25 @@ static struct membuf_dev {
     char *buffer;
     size_t size;
     struct mutex lock;
+    atomic_t open_count;
 } *membuf_devices = NULL;
 
 static int membuf_open(struct inode *inode, struct file *file) {
     struct membuf_dev *dev = container_of(inode->i_cdev, struct membuf_dev, cdev);
+    atomic_inc(&dev->open_count);
+    if (!try_module_get(THIS_MODULE)) {
+        atomic_dec(&dev->open_count);
+        return -ENODEV;
+    }
     file->private_data = dev;
     pr_info("membuf: open device\n");
     return 0;
 }
 
 static int membuf_release(struct inode *inode, struct file *file) {
+    struct membuf_dev *dev = file->private_data;
+    atomic_dec(&dev->open_count);
+    module_put(THIS_MODULE);
     pr_info("membuf: release device\n");
     return 0;
 }
@@ -152,6 +162,7 @@ static int __init membuf_init(void) {
         }
         dev->size = default_buf_size;
         mutex_init(&dev->lock);
+        atomic_set(&dev->open_count, 0);
 
         cdev_init(&dev->cdev, &membuf_fops);
         dev->cdev.owner = THIS_MODULE;
