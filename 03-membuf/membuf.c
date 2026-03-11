@@ -6,7 +6,9 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
+#include <linux/mutex.h>
 #include <linux/slab.h>
+#include <linux/uaccess.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Vasiliy Mozhaev");
@@ -26,6 +28,9 @@ static struct class *membuf_class = NULL;
 static dev_t membuf_dev_num;
 static struct membuf_dev {
     struct cdev cdev;
+    char *buffer;
+    size_t size;
+    struct mutex lock;
 } *membuf_devices = NULL;
 
 static int membuf_open(struct inode *inode, struct file *file) {
@@ -42,12 +47,55 @@ static int membuf_release(struct inode *inode, struct file *file) {
 
 static ssize_t membuf_read(struct file *file, char __user *buf, size_t count, loff_t *ppos) {
     pr_info("membuf: read %zu bytes from offset %lld\n", count, *ppos);
-    return 0;
+
+    struct membuf_dev *dev = file->private_data;
+    size_t available;
+    ssize_t ret;
+
+    if (mutex_lock_interruptible(&dev->lock))
+        return -ERESTARTSYS;
+
+    if (*ppos >= dev->size) {
+        mutex_unlock(&dev->lock);
+        return 0;
+    }
+
+    available = min(count, dev->size - (size_t)*ppos);
+    if (copy_to_user(buf, dev->buffer + *ppos, available)) {
+        mutex_unlock(&dev->lock);
+        return -EFAULT;
+    }
+
+    *ppos += available;
+    ret = available;
+
+    mutex_unlock(&dev->lock);
+    return ret;
 }
 
 static ssize_t membuf_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos) {
     pr_info("membuf: write %zu bytes at offset %lld\n", count, *ppos);
-    return count;
+
+    struct membuf_dev *dev = file->private_data;
+
+    if (mutex_lock_interruptible(&dev->lock))
+        return -ERESTARTSYS;
+
+    if (*ppos >= dev->size) {
+        mutex_unlock(&dev->lock);
+        return 0;
+    }
+
+    size_t writable = min(count, dev->size - (size_t)*ppos);
+    if (copy_from_user(dev->buffer + *ppos, buf, writable)) {
+        mutex_unlock(&dev->lock);
+        return -EFAULT;
+    }
+
+    *ppos += writable;
+
+    mutex_unlock(&dev->lock);
+    return writable;
 }
 
 static const struct file_operations membuf_fops = {
@@ -94,20 +142,32 @@ static int __init membuf_init(void) {
     int i;
     for (i = 0; i < num_devices; i++) {
         dev_t devt = MKDEV(MAJOR(membuf_dev_num), i);
+        struct membuf_dev *dev = &membuf_devices[i];
 
-        cdev_init(&membuf_devices[i].cdev, &membuf_fops);
-        membuf_devices[i].cdev.owner = THIS_MODULE;
+        dev->buffer = kzalloc(default_buf_size, GFP_KERNEL);
+        if (!dev->buffer) {
+            pr_err("membuf: failed to allocate buffer for device %d\n", i);
+            ret = -ENOMEM;
+            goto err_remove_cdevs;
+        }
+        dev->size = default_buf_size;
+        mutex_init(&dev->lock);
 
-        ret = cdev_add(&membuf_devices[i].cdev, devt, 1);
+        cdev_init(&dev->cdev, &membuf_fops);
+        dev->cdev.owner = THIS_MODULE;
+
+        ret = cdev_add(&dev->cdev, devt, 1);
         if (ret < 0) {
             pr_err("membuf: failed to add cdev for device %d\n", i);
+            kfree(dev->buffer);
             goto err_remove_cdevs;
         }
 
-        if (device_create(membuf_class, NULL, devt, NULL, "membuf%d", i) == NULL) {
+        if (IS_ERR(device_create(membuf_class, NULL, devt, NULL, "membuf%d", i))) {
             pr_err("membuf: failed to create device node membuf%d\n", i);
+            cdev_del(&dev->cdev);
+            kfree(dev->buffer);
             ret = -ENOMEM;
-            cdev_del(&membuf_devices[i].cdev);
             goto err_remove_cdevs;
         }
     }
@@ -117,8 +177,11 @@ static int __init membuf_init(void) {
 
 err_remove_cdevs:
     while (i--) {
-        device_destroy(membuf_class, MKDEV(MAJOR(membuf_dev_num), i));
-        cdev_del(&membuf_devices[i].cdev);
+        dev_t devt = MKDEV(MAJOR(membuf_dev_num), i);
+        struct membuf_dev *dev = &membuf_devices[i];
+        device_destroy(membuf_class, devt);
+        cdev_del(&dev->cdev);
+        kfree(dev->buffer);
     }
     class_destroy(membuf_class);
 err_unregister_region:
@@ -133,8 +196,11 @@ static void __exit membuf_exit(void) {
 
     for (int i = num_devices - 1; i >= 0; i--) {
         dev_t devt = MKDEV(MAJOR(membuf_dev_num), i);
+        struct membuf_dev *dev = &membuf_devices[i];
         device_destroy(membuf_class, devt);
-        cdev_del(&membuf_devices[i].cdev);
+        cdev_del(&dev->cdev);
+        mutex_destroy(&dev->lock);
+        kfree(dev->buffer);
     }
 
     class_destroy(membuf_class);
