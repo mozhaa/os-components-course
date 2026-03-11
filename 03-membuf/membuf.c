@@ -170,17 +170,8 @@ static int membuf_open(struct inode *inode, struct file *file) {
         mutex_unlock(&list_lock);
         return -ENXIO;
     }
-    if (down_read_interruptible(&dev->lock)) {
-        mutex_unlock(&list_lock);
-        return -ERESTARTSYS;
-    }
     atomic_inc(&dev->open_count);
-    up_read(&dev->lock);
     mutex_unlock(&list_lock);
-    if (!try_module_get(THIS_MODULE)) {
-        atomic_dec(&dev->open_count);
-        return -ENODEV;
-    }
     file->private_data = dev;
     pr_info("membuf: open device\n");
     return 0;
@@ -189,7 +180,6 @@ static int membuf_open(struct inode *inode, struct file *file) {
 static int membuf_release(struct inode *inode, struct file *file) {
     struct membuf_dev *dev = file->private_data;
     atomic_dec(&dev->open_count);
-    module_put(THIS_MODULE);
     pr_info("membuf: release device\n");
     return 0;
 }
