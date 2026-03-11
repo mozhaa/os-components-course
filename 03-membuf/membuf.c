@@ -113,6 +113,56 @@ MODULE_PARM_DESC(num_devices, "number of membuf devices");
 module_param(default_buf_size, int, 0644);
 MODULE_PARM_DESC(default_buf_size, "default buffer size");
 
+static ssize_t size_show(struct device *dev, struct device_attribute *attr, char *buf) {
+    struct membuf_dev *mdev = dev_get_drvdata(dev);
+    if (mutex_lock_interruptible(&mdev->lock)) {
+        return -ERESTARTSYS;
+    }
+    ssize_t ret = sprintf(buf, "%zu\n", mdev->size);
+    mutex_unlock(&mdev->lock);
+    return ret;
+}
+
+static ssize_t size_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) {
+    struct membuf_dev *mdev = dev_get_drvdata(dev);
+
+    unsigned long new_size;
+    int ret = kstrtoul(buf, 0, &new_size);
+    if (ret) {
+        return ret;
+    }
+    if (new_size == 0) {
+        return -EINVAL;
+    }
+
+    if (mutex_lock_interruptible(&mdev->lock)) {
+        return -ERESTARTSYS;
+    }
+
+    if (atomic_read(&mdev->open_count) > 0) {
+        mutex_unlock(&mdev->lock);
+        return -EBUSY;
+    }
+
+    char *new_buf = kzalloc(new_size, GFP_KERNEL);
+    if (!new_buf) {
+        mutex_unlock(&mdev->lock);
+        return -ENOMEM;
+    }
+
+    size_t copy_len = min(mdev->size, (size_t)new_size);
+    memcpy(new_buf, mdev->buffer, copy_len);
+
+    kfree(mdev->buffer);
+    mdev->buffer = new_buf;
+    mdev->size = new_size;
+
+    mutex_unlock(&mdev->lock);
+    return count;
+}
+
+static DEVICE_ATTR(size, 0644, size_show, size_store);
+
 static int membuf_open(struct inode *inode, struct file *file) {
     struct membuf_dev *dev = container_of(inode->i_cdev, struct membuf_dev, cdev);
     mutex_lock(&list_lock);
@@ -120,7 +170,12 @@ static int membuf_open(struct inode *inode, struct file *file) {
         mutex_unlock(&list_lock);
         return -ENXIO;
     }
+    if (mutex_lock_interruptible(&dev->lock)) {
+        mutex_unlock(&list_lock);
+        return -ERESTARTSYS;
+    }
     atomic_inc(&dev->open_count);
+    mutex_unlock(&dev->lock);
     mutex_unlock(&list_lock);
     if (!try_module_get(THIS_MODULE)) {
         atomic_dec(&dev->open_count);
@@ -283,20 +338,30 @@ static int create_membuf_device(int minor) {
 
     int ret = cdev_add(&dev->cdev, devt, 1);
     if (ret < 0) {
-        kfree(dev->buffer);
-        kfree(dev);
-        return ret;
+        goto err_free_buffer;
     }
 
-    if (IS_ERR(device_create(membuf_class, NULL, devt, NULL, "membuf%d", minor))) {
-        cdev_del(&dev->cdev);
-        kfree(dev->buffer);
-        kfree(dev);
-        return -ENOMEM;
+    struct device *class_dev = device_create(membuf_class, NULL, devt, dev, "membuf%d", minor);
+    if (IS_ERR(class_dev)) {
+        ret = PTR_ERR(class_dev);
+        goto err_cdev_del;
+    }
+
+    ret = device_create_file(class_dev, &dev_attr_size);
+    if (ret < 0) {
+        device_destroy(membuf_class, devt);
+        goto err_cdev_del;
     }
 
     membuf_devices[minor] = dev;
     return 0;
+
+err_cdev_del:
+    cdev_del(&dev->cdev);
+err_free_buffer:
+    kfree(dev->buffer);
+    kfree(dev);
+    return ret;
 }
 
 static void destroy_membuf_device(int minor) {
