@@ -14,10 +14,12 @@ MODULE_VERSION("0.1");
 #define CLASS_NAME "kpipe"
 
 static int major;
-static unsigned long size = 4096;
+static unsigned long capacity = 4096;
 static struct class *kpipe_class = NULL;
 static struct device *kpipe_device = NULL;
 static char *buffer;
+static int cursor = 0;
+static int cur_size = 0;
 
 static ssize_t kpipe_read(struct file *file, char __user *buf, size_t size, loff_t *ppos) { return 0; }
 
@@ -87,8 +89,8 @@ static void __exit kpipe_end(void) {
     unregister_chrdev(major, DEVICE_NAME);
 }
 
-module_param(size, ulong, 0644);
-MODULE_PARM_DESC(size, "buffer size");
+module_param(capacity, ulong, 0644);
+MODULE_PARM_DESC(capacity, "buffer size");
 
 module_init(kpipe_start);
 module_exit(kpipe_end);
