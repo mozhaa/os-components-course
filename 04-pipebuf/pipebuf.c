@@ -9,37 +9,37 @@
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Vasiliy Mozhaev");
-MODULE_DESCRIPTION("kpipe");
+MODULE_DESCRIPTION("pipebuf");
 MODULE_VERSION("0.1");
 
-#define DEVICE_NAME "kpipe"
-#define CLASS_NAME "kpipe"
+#define DEVICE_NAME "pipebuf"
+#define CLASS_NAME "pipebuf"
 
 static int major;
 static unsigned long capacity = 4096;
-static struct class *kpipe_class = NULL;
-static struct device *kpipe_device = NULL;
+static struct class *pipebuf_class = NULL;
+static struct device *pipebuf_device = NULL;
 static char *buffer;
 static int cursor = 0;
 static int cur_size = 0;
 
-static DEFINE_MUTEX(kpipe_mutex);
+static DEFINE_MUTEX(pipebuf_mutex);
 static DECLARE_WAIT_QUEUE_HEAD(read_wait);
 static DECLARE_WAIT_QUEUE_HEAD(write_wait);
 
-static ssize_t kpipe_read(struct file *file, char __user *buf, size_t size, loff_t *ppos) {
-    mutex_lock(&kpipe_mutex);
+static ssize_t pipebuf_read(struct file *file, char __user *buf, size_t size, loff_t *ppos) {
+    mutex_lock(&pipebuf_mutex);
 
     while (cur_size == 0) {
         if (file->f_flags & O_NONBLOCK) {
-            mutex_unlock(&kpipe_mutex);
+            mutex_unlock(&pipebuf_mutex);
             return -EAGAIN;
         }
-        mutex_unlock(&kpipe_mutex);
+        mutex_unlock(&pipebuf_mutex);
         if (wait_event_interruptible(read_wait, cur_size > 0)) {
             return -ERESTARTSYS;
         }
-        mutex_lock(&kpipe_mutex);
+        mutex_lock(&pipebuf_mutex);
     }
 
     size = (size < cur_size) ? size : cur_size;
@@ -65,25 +65,25 @@ static ssize_t kpipe_read(struct file *file, char __user *buf, size_t size, loff
     cur_size -= size;
 
     wake_up(&write_wait);
-    mutex_unlock(&kpipe_mutex);
+    mutex_unlock(&pipebuf_mutex);
     return size;
 }
 
-static ssize_t kpipe_write(struct file *file, const char __user *data, size_t size, loff_t *ppos) {
+static ssize_t pipebuf_write(struct file *file, const char __user *data, size_t size, loff_t *ppos) {
     ssize_t total = 0;
-    mutex_lock(&kpipe_mutex);
+    mutex_lock(&pipebuf_mutex);
 
     while (total < size) {
         int available = capacity - cur_size;
         if (available == 0) {
             if (file->f_flags & O_NONBLOCK) {
                 if (total == 0) {
-                    mutex_unlock(&kpipe_mutex);
+                    mutex_unlock(&pipebuf_mutex);
                     return -EAGAIN;
                 }
                 break;
             }
-            mutex_unlock(&kpipe_mutex);
+            mutex_unlock(&pipebuf_mutex);
             if (wait_event_interruptible(write_wait, cur_size < capacity)) {
                 if (total == 0) {
                     return -ERESTARTSYS;
@@ -91,7 +91,7 @@ static ssize_t kpipe_write(struct file *file, const char __user *data, size_t si
                     return total;
                 }
             }
-            mutex_lock(&kpipe_mutex);
+            mutex_lock(&pipebuf_mutex);
             continue;
         }
 
@@ -101,14 +101,14 @@ static ssize_t kpipe_write(struct file *file, const char __user *data, size_t si
 
         if (l_size > 0) {
             if (copy_from_user(buffer + cursor, data + total, l_size)) {
-                mutex_unlock(&kpipe_mutex);
+                mutex_unlock(&pipebuf_mutex);
                 return -EFAULT;
             }
             cursor = (cursor + l_size) % capacity;
         }
         if (r_size > 0) {
             if (copy_from_user(buffer + cursor, data + total + l_size, r_size)) {
-                mutex_unlock(&kpipe_mutex);
+                mutex_unlock(&pipebuf_mutex);
                 return -EFAULT;
             }
             cursor = (cursor + r_size) % capacity;
@@ -120,47 +120,47 @@ static ssize_t kpipe_write(struct file *file, const char __user *data, size_t si
         wake_up(&read_wait);
     }
 
-    mutex_unlock(&kpipe_mutex);
+    mutex_unlock(&pipebuf_mutex);
     wake_up(&read_wait);
     return total;
 }
 
-static char *kpipe_devnode(const struct device *dev, umode_t *mode) {
+static char *pipebuf_devnode(const struct device *dev, umode_t *mode) {
     if (mode) {
         *mode = 0666;
     }
     return NULL;
 }
 
-static struct file_operations kpipe_fops = {
+static struct file_operations pipebuf_fops = {
     .owner = THIS_MODULE,
-    .read = kpipe_read,
-    .write = kpipe_write,
+    .read = pipebuf_read,
+    .write = pipebuf_write,
 };
 
-static int __init kpipe_start(void) {
+static int __init pipebuf_start(void) {
     int ret;
 
-    major = register_chrdev(0, DEVICE_NAME, &kpipe_fops);
+    major = register_chrdev(0, DEVICE_NAME, &pipebuf_fops);
     if (major < 0) {
         ret = major;
-        pr_err("kpipe: failed to register device: %d\n", ret);
+        pr_err("pipebuf: failed to register device: %d\n", ret);
         goto fail_chrdev;
     }
 
-    kpipe_class = class_create(CLASS_NAME);
-    if (IS_ERR(kpipe_class)) {
-        ret = PTR_ERR(kpipe_class);
-        pr_err("kpipe: failed to create class: %d\n", ret);
+    pipebuf_class = class_create(CLASS_NAME);
+    if (IS_ERR(pipebuf_class)) {
+        ret = PTR_ERR(pipebuf_class);
+        pr_err("pipebuf: failed to create class: %d\n", ret);
         goto fail_class;
     }
 
-    kpipe_class->devnode = kpipe_devnode;
+    pipebuf_class->devnode = pipebuf_devnode;
 
-    kpipe_device = device_create(kpipe_class, NULL, MKDEV(major, 0), NULL, DEVICE_NAME);
-    if (IS_ERR(kpipe_device)) {
-        ret = PTR_ERR(kpipe_device);
-        pr_err("kpipe: failed to create device: %d\n", ret);
+    pipebuf_device = device_create(pipebuf_class, NULL, MKDEV(major, 0), NULL, DEVICE_NAME);
+    if (IS_ERR(pipebuf_device)) {
+        ret = PTR_ERR(pipebuf_device);
+        pr_err("pipebuf: failed to create device: %d\n", ret);
         goto fail_device;
     }
 
@@ -173,24 +173,24 @@ static int __init kpipe_start(void) {
     return 0;
 
 fail_buffer:
-    device_destroy(kpipe_class, MKDEV(major, 0));
+    device_destroy(pipebuf_class, MKDEV(major, 0));
 fail_device:
-    class_destroy(kpipe_class);
+    class_destroy(pipebuf_class);
 fail_class:
     unregister_chrdev(major, DEVICE_NAME);
 fail_chrdev:
     return ret;
 }
 
-static void __exit kpipe_end(void) {
+static void __exit pipebuf_end(void) {
     kfree(buffer);
-    device_destroy(kpipe_class, MKDEV(major, 0));
-    class_destroy(kpipe_class);
+    device_destroy(pipebuf_class, MKDEV(major, 0));
+    class_destroy(pipebuf_class);
     unregister_chrdev(major, DEVICE_NAME);
 }
 
 module_param(capacity, ulong, 0644);
 MODULE_PARM_DESC(capacity, "buffer size");
 
-module_init(kpipe_start);
-module_exit(kpipe_end);
+module_init(pipebuf_start);
+module_exit(pipebuf_end);
