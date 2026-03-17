@@ -1,10 +1,12 @@
 #include <linux/ctype.h>
 #include <linux/device.h>
+#include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/sched.h>
+#include <linux/slab.h>
 #include <linux/wait.h>
 
 MODULE_LICENSE("GPL");
@@ -27,16 +29,58 @@ static DEFINE_MUTEX(pipebuf_mutex);
 static DECLARE_WAIT_QUEUE_HEAD(read_wait);
 static DECLARE_WAIT_QUEUE_HEAD(write_wait);
 
+static int n_readers = 0;
+static int n_writers = 0;
+
+static int pipebuf_open(struct inode *inode, struct file *filp) {
+    mutex_lock(&pipebuf_mutex);
+
+    if (filp->f_mode & FMODE_READ) {
+        if (n_readers) {
+            mutex_unlock(&pipebuf_mutex);
+            return -EBUSY;
+        }
+        ++n_readers;
+    }
+    if (filp->f_mode & FMODE_WRITE) {
+        ++n_writers;
+    }
+
+    mutex_unlock(&pipebuf_mutex);
+    return 0;
+}
+
+static int pipebuf_release(struct inode *inode, struct file *filp) {
+    mutex_lock(&pipebuf_mutex);
+
+    if (filp->f_mode & FMODE_READ) {
+        --n_readers;
+    }
+    if (filp->f_mode & FMODE_WRITE) {
+        --n_writers;
+        if (n_writers == 0) {
+            wake_up(&read_wait);
+        }
+    }
+
+    mutex_unlock(&pipebuf_mutex);
+    return 0;
+}
+
 static ssize_t pipebuf_read(struct file *file, char __user *buf, size_t size, loff_t *ppos) {
     mutex_lock(&pipebuf_mutex);
 
     while (cur_size == 0) {
+        if (n_writers == 0) {
+            mutex_unlock(&pipebuf_mutex);
+            return 0;
+        }
         if (file->f_flags & O_NONBLOCK) {
             mutex_unlock(&pipebuf_mutex);
             return -EAGAIN;
         }
         mutex_unlock(&pipebuf_mutex);
-        if (wait_event_interruptible(read_wait, cur_size > 0)) {
+        if (wait_event_interruptible(read_wait, cur_size > 0 || n_writers == 0)) {
             return -ERESTARTSYS;
         }
         mutex_lock(&pipebuf_mutex);
@@ -44,6 +88,7 @@ static ssize_t pipebuf_read(struct file *file, char __user *buf, size_t size, lo
 
     size = (size < cur_size) ? size : cur_size;
     if (size == 0) {
+        mutex_unlock(&pipebuf_mutex);
         return 0;
     }
 
@@ -53,11 +98,13 @@ static ssize_t pipebuf_read(struct file *file, char __user *buf, size_t size, lo
 
     if (l_size > 0) {
         if (copy_to_user(buf, buffer + read_cursor, l_size)) {
+            mutex_unlock(&pipebuf_mutex);
             return -EFAULT;
         }
     }
     if (r_size > 0) {
         if (copy_to_user(buf + l_size, buffer, r_size)) {
+            mutex_unlock(&pipebuf_mutex);
             return -EFAULT;
         }
     }
@@ -121,7 +168,6 @@ static ssize_t pipebuf_write(struct file *file, const char __user *data, size_t 
     }
 
     mutex_unlock(&pipebuf_mutex);
-    wake_up(&read_wait);
     return total;
 }
 
@@ -134,6 +180,8 @@ static char *pipebuf_devnode(const struct device *dev, umode_t *mode) {
 
 static struct file_operations pipebuf_fops = {
     .owner = THIS_MODULE,
+    .open = pipebuf_open,
+    .release = pipebuf_release,
     .read = pipebuf_read,
     .write = pipebuf_write,
 };
