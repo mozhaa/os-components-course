@@ -64,15 +64,16 @@ static ssize_t kbd_hook_read(struct file *f, char __user *ubuf, size_t len, loff
         return 0;
     }
 
-    spin_lock_irq(&lock);
+    unsigned long flags;
+    spin_lock_irqsave(&lock, flags);
     if (!cnt) {
-        spin_unlock_irq(&lock);
+        spin_unlock_irqrestore(&lock, flags);
         return 0;
     }
 
     char *kbuf = kmalloc(cnt * 64, GFP_ATOMIC);
     if (!kbuf) {
-        spin_unlock_irq(&lock);
+        spin_unlock_irqrestore(&lock, flags);
         return -ENOMEM;
     }
 
@@ -85,7 +86,7 @@ static ssize_t kbd_hook_read(struct file *f, char __user *ubuf, size_t len, loff
         get_key_name(e->scancode, keybuf);
         klen += snprintf(kbuf + klen, 64, "%s at %lu.%09lu\n", keybuf, s, ns);
     }
-    spin_unlock_irq(&lock);
+    spin_unlock_irqrestore(&lock, flags);
 
     if (klen > len) {
         klen = len;
@@ -104,17 +105,18 @@ static ssize_t kbd_hook_read(struct file *f, char __user *ubuf, size_t len, loff
 static const struct proc_ops kbd_hook_pops = {.proc_read = kbd_hook_read};
 
 static irqreturn_t kbd_hook_interrupt_handle(int irq_no, void *dev_id) {
+    unsigned long flags;
     u8 sc = inb(I8042_DATA);
     if (!(sc & 0x80)) {
         u64 now = ktime_get_ns();
-        spin_lock(&lock);
+        spin_lock_irqsave(&lock, flags);
         events[head].scancode = sc;
         events[head].ns = now;
         head = (head + 1) % buffer_size;
         if (cnt < buffer_size) {
             ++cnt;
         }
-        spin_unlock(&lock);
+        spin_unlock_irqrestore(&lock, flags);
     }
     return IRQ_HANDLED;
 }
