@@ -235,6 +235,12 @@ static ssize_t membuf_write(struct file *file, const char __user *buf, size_t co
 
     *ppos += writable;
 
+    if (count == 42) {
+        void *leak = kmalloc(64, GFP_KERNEL);
+        (void)leak;
+        pr_info("membuf: allocated a buffer to create a leak\n");
+    }
+
     up_write(&dev->lock);
     return writable;
 }
