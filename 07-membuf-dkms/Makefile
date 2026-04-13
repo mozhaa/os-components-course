@@ -1,7 +1,9 @@
 obj-m += membuf.o
 
+KERNELDIR ?= /lib/modules/$(KERNELRELEASE)/build
+
 all:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
-    
+	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
+
 clean:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
