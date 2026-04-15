@@ -1,0 +1,86 @@
+root@localhost:~# modprobe membuf
+[  127.810902][  T335] membuf: loading out-of-tree module taints kernel.
+[  127.818281][  T335] membuf: loading module
+[  127.819123][  T335] membuf: num_devices = 1
+[  127.820045][  T335] membuf: default_buf_size = 4096
+[  127.825352][  T335] membuf: successfully created 1 devices
+root@localhost:~# rmmod membuf
+[  130.796360][  T338] membuf: unloading module
+root@localhost:~# echo scan >/sys/kernel/debug/kmemleak 
+root@localhost:~# echo scan >/sys/kernel/debug/kmemleak 
+root@localhost:~# cat /sys/kernel/debug/kmemleak 
+
+-------------------------------------------------------------
+
+root@localhost:~# modprobe membuf
+[  150.027907][  T340] membuf: loading module
+[  150.028847][  T340] membuf: num_devices = 1
+[  150.029762][  T340] membuf: default_buf_size = 4096
+[  150.032588][  T340] membuf: successfully created 1 devices
+root@localhost:~# cat /usr/src/membuf-0.1/membuf.c >/dev/membuf0 
+[  164.268640][  T343] membuf: open device
+[  164.301555][  T343] membuf: write 9917 bytes at offset 0
+[  164.303436][  T343] membuf: write 5821 bytes at offset 4096
+cat: write error: No space left on device
+[  164.306188][  T343] membuf: release device
+root@localhost:~# echo 10000 >/sys/module/membuf/parameters/default_buf_size 
+root@localhost:~# echo 2 >/sys/module/membuf/parameters/num_devices 
+root@localhost:~# ls /dev/membuf*
+/dev/membuf0  /dev/membuf1
+root@localhost:~# cat /usr/src/membuf-0.1/membuf.c >/dev/membuf1
+[  204.067685][  T346] membuf: open device
+[  204.105125][  T346] membuf: write 9917 bytes at offset 0
+[  204.106852][  T346] membuf: release device
+root@localhost:~# echo 1 >/sys/module/membuf/parameters/num_devices 
+root@localhost:~# echo 100 >/sys/module/membuf/parameters/default_buf_size 
+root@localhost:~# echo 3 >/sys/module/membuf/parameters/num_devices 
+root@localhost:~# cat /usr/src/membuf-0.1/membuf.c >/dev/membuf1
+[  244.816345][  T350] membuf: open device
+[  244.841944][  T350] membuf: write 9917 bytes at offset 0
+[  244.843379][  T350] membuf: write 9817 bytes at offset 100
+cat: write error: No space left on device
+[  244.846896][  T350] membuf: release device
+root@localhost:~# cat /usr/src/membuf-0.1/membuf.c >/dev/membuf2
+[  246.734020][  T351] membuf: open device
+[  246.766769][  T351] membuf: write 9917 bytes at offset 0
+[  246.768662][  T351] membuf: write 9817 bytes at offset 100
+cat: write error: No space left on device
+[  246.772746][  T351] membuf: release device
+root@localhost:~# echo 1 >/sys/module/membuf/parameters/num_devices 
+root@localhost:~# rmmod membuf
+[  253.976664][  T354] membuf: unloading module
+root@localhost:~# echo scan >/sys/kernel/debug/kmemleak 
+root@localhost:~# echo scan >/sys/kernel/debug/kmemleak 
+root@localhost:~# echo scan >/sys/kernel/debug/kmemleak 
+root@localhost:~# cat /sys/kernel/debug/kmemleak 
+
+-------------------------------------------------------------
+
+root@localhost:~# modprobe membuf
+[  292.207869][  T356] membuf: loading module
+[  292.208893][  T356] membuf: num_devices = 1
+[  292.210189][  T356] membuf: default_buf_size = 4096
+[  292.213593][  T356] membuf: successfully created 1 devices
+root@localhost:~# echo 1234 >/dev/membuf0 
+[  298.713461][  T321] membuf: open device
+[  298.718428][  T321] membuf: write 5 bytes at offset 0
+[  298.723938][  T321] membuf: allocated a buffer of size 53 to create a leak (address=ffff888109207b40)
+[  298.734800][  T321] membuf: release device
+root@localhost:~# rmmod membuf
+[  302.646456][  T359] membuf: unloading module
+root@localhost:~# echo scan >/sys/kernel/debug/kmemleak 
+root@localhost:~# echo scan >/sys/kernel/debug/kmemleak 
+[  309.733831][  T321] kmemleak: 1 new suspected memory leaks (see /sys/kernel/debug/kmemleak)
+root@localhost:~# cat /sys/kernel/debug/kmemleak 
+unreferenced object 0xffff888109207b40 (size 64):
+  comm "bash", pid 321, jiffies 4294965138
+  hex dump (first 32 bytes):
+    6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk
+    6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk
+  backtrace (crc af2c18ca):
+    __kmalloc_cache_noprof+0x1f3/0x270
+    0xffffffffc004bf84
+    vfs_write+0x181/0x950
+    ksys_write+0xfb/0x1d0
+    do_syscall_64+0xbb/0x1d0
+    entry_SYSCALL_64_after_hwframe+0x77/0x7f
