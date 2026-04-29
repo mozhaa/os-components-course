@@ -12,6 +12,10 @@ MODULE_AUTHOR("Vasiliy Mozhaev");
 MODULE_DESCRIPTION("netfilter");
 MODULE_VERSION("0.1");
 
+static int banned_port = 0;
+module_param(banned_port, int, 0644);
+MODULE_PARM_DESC(banned_port, "tcp port to ban (0 = no ban)");
+
 static struct nf_hook_ops nfho;
 
 static unsigned int my_netfilter_hook(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
@@ -35,6 +39,11 @@ static unsigned int my_netfilter_hook(void *priv, struct sk_buff *skb, const str
     int src_port = ntohs(tcp->source);
 
     pr_info("netfilter: %pI4:%u -> %pI4:%u\n", &src_ip, src_port, &dst_ip, dst_port);
+
+    if (banned_port && dst_port == banned_port) {
+        pr_info("netfilter: DROPPED %pI4:%u -> %pI4:%u\n", &src_ip, src_port, &dst_ip, dst_port);
+        return NF_DROP;
+    }
 
     return NF_ACCEPT;
 }
