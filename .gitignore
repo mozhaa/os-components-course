@@ -55,3 +55,4 @@ Mkfile.old
 
 *.txt
 .qemu/
+bpf/
