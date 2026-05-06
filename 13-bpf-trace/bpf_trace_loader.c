@@ -1,4 +1,4 @@
-#include "bpf_trace.skel.h"
+#include "bpf_fw.skel.h"
 #include <bpf/libbpf.h>
 #include <net/if.h>
 #include <sys/resource.h>
@@ -23,7 +23,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    struct bpf_trace_bpf *skel = bpf_trace_bpf__open_and_load();
+    struct bpf_fw_bpf *skel = bpf_fw_bpf__open_and_load();
     if (!skel)
         return 1;
 
@@ -55,6 +55,6 @@ int main(int argc, char **argv) {
     pause();
 
     bpf_link__destroy(link);
-    bpf_trace_bpf__destroy(skel);
+    bpf_fw_bpf__destroy(skel);
     return 0;
 }
