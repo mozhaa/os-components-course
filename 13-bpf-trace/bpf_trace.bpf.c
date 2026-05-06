@@ -4,6 +4,13 @@
 
 #define ETH_P_IP 0x0800
 
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 32);
+    __type(key, __u32);
+    __type(value, __u8);
+} blocked_ports SEC(".maps");
+
 SEC("xdp")
 int xdp_drop_ssh(struct xdp_md *ctx) {
     void *data_end = (void *)(long)ctx->data_end;
@@ -26,8 +33,9 @@ int xdp_drop_ssh(struct xdp_md *ctx) {
     if ((void *)(tcp + 1) > data_end)
         return XDP_PASS;
 
-    if (tcp->dest == bpf_htons(22)) {
-        bpf_printk("drop\n");
+    int port = bpf_ntohs(tcp->dest);
+    if (bpf_map_lookup_elem(&blocked_ports, &port)) {
+        bpf_printk("dropped on port %d\n", port);
         return XDP_DROP;
     }
 

@@ -5,8 +5,8 @@
 #include <unistd.h>
 
 int main(int argc, char **argv) {
-    if (argc != 2) {
-        fprintf(stderr, "usage: %s <interface>\n", argv[0]);
+    if (argc < 3) {
+        fprintf(stderr, "usage: %s <interface> [ports...]\n", argv[0]);
         return 1;
     }
 
@@ -33,12 +33,25 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    __u8 one = 1;
+
+    for (int i = 2; i < argc; ++i) {
+        int port = strtol(argv[i], 0, 10);
+        if (bpf_map__update_elem(skel->maps.blocked_ports, &port, sizeof(port), &one, sizeof(one), BPF_ANY)) {
+            fprintf(stderr, "failed to add port %d to map\n", port);
+            return 1;
+        } else {
+            fprintf(stderr, "added port %d to map\n", port);
+        }
+    }
+    
     struct bpf_link *link = bpf_program__attach_xdp(prog, ifindex);
     if (!link) {
         fprintf(stderr, "failed to attach xdp\n");
         return 1;
     }
-
+    
+    fprintf(stderr, "attached\n");
     pause();
 
     bpf_link__destroy(link);
