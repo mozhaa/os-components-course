@@ -9,8 +9,8 @@
 #include <linux/fs.h>
 #include <linux/pagemap.h>
 
-MODULE_DESCRIPTION("Simple no-dev filesystem");
-MODULE_AUTHOR("SO2");
+MODULE_DESCRIPTION("myfs");
+MODULE_AUTHOR("Vasiliy Mozhaev");
 MODULE_LICENSE("GPL");
 
 #define MYFS_BLOCKSIZE		4096
