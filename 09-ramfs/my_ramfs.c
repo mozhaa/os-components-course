@@ -9,6 +9,9 @@
 #include <linux/fs.h>
 #include <linux/pagemap.h>
 #include <linux/mnt_idmapping.h>
+#include <linux/slab.h>
+#include <linux/uio.h>
+#include <linux/string.h>
 
 MODULE_DESCRIPTION("my_ramfs");
 MODULE_AUTHOR("Vasiliy Mozhaev");
@@ -18,6 +21,139 @@ MODULE_LICENSE("GPL");
 #define my_ramfs_BLOCKSIZE_BITS	12
 #define my_ramfs_MAGIC		0xbeefcafe
 #define LOG_LEVEL		KERN_ALERT
+
+static int rle_compress(const u8 *src, size_t src_len, u8 **dst) {
+    u8 *out;
+    size_t out_len = 0, i;
+    out = kmalloc(2 * src_len, GFP_KERNEL);
+    if (!out)
+        return -ENOMEM;
+
+    for (i = 0; i < src_len; ++i) {
+        u8 run = 1;
+        while (i + run < src_len && src[i + run] == src[i] && run < 255)
+            ++run;
+        out[out_len++] = src[i];
+        out[out_len++] = run;
+        i += run - 1;
+    }
+    *dst = out;
+    return out_len;
+}
+
+static int rle_decompress(const u8 *src, size_t src_len, u8 **dst) {
+    u8 *out;
+    size_t out_len = 0, i = 0;
+    out = kmalloc(256 * src_len, GFP_KERNEL);
+    if (!out)
+        return -ENOMEM;
+
+    while (i + 1 < src_len) {
+        u8 val = src[i];
+        u8 run = src[i + 1];
+        memset(out + out_len, val, run);
+        out_len += run;
+        i += 2;
+    }
+    *dst = out;
+    return out_len;
+}
+
+struct my_ramfs_inode_info {
+    u8 *data;
+    size_t size;
+};
+
+static ssize_t my_ramfs_read_iter(struct kiocb *iocb, struct iov_iter *to) {
+    struct file *filp = iocb->ki_filp;
+    struct inode *inode = file_inode(filp);
+    struct my_ramfs_inode_info *info = inode->i_private;
+    u8 *decompressed = NULL;
+    ssize_t ret, remaining, to_copy;
+    loff_t pos = iocb->ki_pos;
+    size_t count = iov_iter_count(to);
+
+    if (pos >= inode->i_size)
+        return 0;
+
+    if (!info || !info->data)
+        return 0;
+
+    ret = rle_decompress(info->data, info->size, &decompressed);
+    if (ret < 0)
+        return ret;
+
+    remaining = inode->i_size - pos;
+    to_copy = min_t(size_t, remaining, count);
+    if (to_copy > 0) {
+        if (copy_to_iter(decompressed + pos, to_copy, to) != to_copy) {
+            kfree(decompressed);
+            return -EFAULT;
+        }
+        iocb->ki_pos += to_copy;
+    }
+    kfree(decompressed);
+    return to_copy;
+}
+
+static ssize_t my_ramfs_write_iter(struct kiocb *iocb, struct iov_iter *from) {
+    struct file *filp = iocb->ki_filp;
+    struct inode *inode = file_inode(filp);
+    struct my_ramfs_inode_info *info = inode->i_private;
+    u8 *buffer, *compressed;
+    ssize_t len;
+    int comp_len;
+
+    len = iov_iter_count(from);
+    if (len == 0)
+        return 0;
+
+    buffer = kmalloc(len, GFP_KERNEL);
+    if (!buffer)
+        return -ENOMEM;
+
+    if (!copy_from_iter_full(buffer, len, from)) {
+        kfree(buffer);
+        return -EFAULT;
+    }
+
+    comp_len = rle_compress(buffer, len, &compressed);
+    kfree(buffer);
+    if (comp_len < 0)
+        return comp_len;
+
+    if (info) {
+        kfree(info->data);
+    } else {
+        info = kmalloc(sizeof(*info), GFP_KERNEL);
+        if (!info) {
+            kfree(compressed);
+            return -ENOMEM;
+        }
+        inode->i_private = info;
+    }
+    info->data = compressed;
+    info->size = comp_len;
+
+    inode->i_size = len;
+    inode_set_mtime_to_ts(inode, current_time(inode));
+    inode_set_ctime_to_ts(inode, current_time(inode));
+    return len;
+}
+
+static void my_ramfs_free_inode(struct inode *inode) {
+    struct my_ramfs_inode_info *info = inode->i_private;
+    if (info) {
+        kfree(info->data);
+        kfree(info);
+    }
+}
+
+static const struct file_operations my_ramfs_file_operations = {
+    .read_iter = my_ramfs_read_iter,
+    .write_iter = my_ramfs_write_iter,
+    .llseek = generic_file_llseek,
+};
 
 /* declarations of functions that are part of operation structures */
 
@@ -33,6 +169,7 @@ static int my_ramfs_mkdir(struct mnt_idmap *idmap, struct inode *dir, struct den
 static const struct super_operations my_ramfs_ops = {
 	.statfs		= simple_statfs,
 	.drop_inode	= generic_drop_inode,
+    .free_inode = my_ramfs_free_inode,
 };
 
 static const struct inode_operations my_ramfs_dir_inode_operations = {
@@ -45,14 +182,6 @@ static const struct inode_operations my_ramfs_dir_inode_operations = {
 	.rmdir          = simple_rmdir,
 	.mknod          = my_ramfs_mknod,
 	.rename         = simple_rename,
-};
-
-static const struct file_operations my_ramfs_file_operations = {
-	/* TODO 6/4: Fill file operations structure. */
-	.read_iter      = generic_file_read_iter,
-	.write_iter     = generic_file_write_iter,
-	.mmap           = generic_file_mmap,
-	.llseek         = generic_file_llseek,
 };
 
 static const struct inode_operations my_ramfs_file_inode_operations = {
