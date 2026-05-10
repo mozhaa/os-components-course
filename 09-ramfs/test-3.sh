@@ -3,14 +3,14 @@
 set -ex
 
 # load module
-insmod myfs.ko
+insmod my_ramfs.ko
 
 # mount filesystem
-mkdir -p /mnt/myfs
-mount -t myfs none /mnt/myfs
-ls -laid /mnt/myfs
+mkdir -p /mnt/my_ramfs
+mount -t my_ramfs none /mnt/my_ramfs
+ls -laid /mnt/my_ramfs
 
-cd /mnt/myfs
+cd /mnt/my_ramfs
 
 # create file
 touch myfile
@@ -38,7 +38,7 @@ ls -la
 
 # unmount filesystem
 cd ..
-umount /mnt/myfs
+umount /mnt/my_ramfs
 
 # unload module
-rmmod myfs
+rmmod my_ramfs
