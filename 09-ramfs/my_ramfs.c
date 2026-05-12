@@ -155,18 +155,10 @@ static ssize_t my_ramfs_write_iter(struct kiocb *iocb, struct iov_iter *from) {
         kfree(old_data);
     }
 
-    u8 *tmp_buf = kmalloc(len, GFP_KERNEL);
-    if (!tmp_buf) {
-        kfree(new_data);
-        return -ENOMEM;
-    }
-    if (!copy_from_iter_full(tmp_buf, len, from)) {
-        kfree(tmp_buf);
+    if (!copy_from_iter_full(new_data + pos, len, from)) {
         kfree(new_data);
         return -EFAULT;
     }
-    memcpy(new_data + pos, tmp_buf, len);
-    kfree(tmp_buf);
 
     ret = rle_compress(new_data, new_size, &compressed);
     kfree(new_data);
