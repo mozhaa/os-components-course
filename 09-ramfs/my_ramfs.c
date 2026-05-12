@@ -123,7 +123,6 @@ static ssize_t my_ramfs_write_iter(struct kiocb *iocb, struct iov_iter *from) {
     struct inode *inode = file_inode(filp);
     struct my_ramfs_inode_info *info = inode->i_private;
     u8 *old_data = NULL, *new_data = NULL, *compressed = NULL;
-    size_t old_uncompressed = 0;
     loff_t pos = iocb->ki_pos;
     size_t len = iov_iter_count(from);
     size_t new_size;
@@ -139,7 +138,6 @@ static ssize_t my_ramfs_write_iter(struct kiocb *iocb, struct iov_iter *from) {
         ret = rle_decompress(info->data, info->size, &old_data);
         if (ret < 0)
             return ret;
-        old_uncompressed = ret;
     }
 
     new_size = max_t(loff_t, pos + len, inode->i_size);
@@ -150,8 +148,7 @@ static ssize_t my_ramfs_write_iter(struct kiocb *iocb, struct iov_iter *from) {
     }
 
     if (old_data) {
-        size_t copy_size = min_t(size_t, old_uncompressed, inode->i_size);
-        memcpy(new_data, old_data, copy_size);
+        memcpy(new_data, old_data, inode->i_size);
         kfree(old_data);
     }
 
