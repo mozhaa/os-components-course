@@ -58,11 +58,14 @@ static int __init vkbd_init(void) {
     press_key(KEY_ENTER);
     input_sync(vkbd_dev);
 
+    pr_info("[vkbd]: loaded");
+
     return 0;
 }
 
 static void __exit vkbd_exit(void) {
     input_unregister_device(vkbd_dev);
+    pr_info("[vkbd]: unloaded");
 }
 
 module_init(vkbd_init);
