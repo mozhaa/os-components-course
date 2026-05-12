@@ -22,6 +22,28 @@ MODULE_LICENSE("GPL");
 #define my_ramfs_MAGIC		0xbeefcafe
 #define LOG_LEVEL		KERN_ALERT
 
+// static int rle_compress(const u8 *src, size_t src_len, u8 **dst) {
+//     u8 *out;
+//     out = kmalloc(src_len, GFP_KERNEL);
+//     if (!out)
+//         return -ENOMEM;
+
+//     memcpy(out, src, src_len);
+//     *dst = out;
+//     return src_len;
+// }
+
+// static int rle_decompress(const u8 *src, size_t src_len, u8 **dst) {
+//     u8 *out;
+//     out = kmalloc(src_len, GFP_KERNEL);
+//     if (!out)
+//         return -ENOMEM;
+
+//     memcpy(out, src, src_len);
+//     *dst = out;
+//     return src_len;
+// }
+
 static int rle_compress(const u8 *src, size_t src_len, u8 **dst) {
     u8 *out;
     size_t out_len = 0, i;
@@ -100,44 +122,75 @@ static ssize_t my_ramfs_write_iter(struct kiocb *iocb, struct iov_iter *from) {
     struct file *filp = iocb->ki_filp;
     struct inode *inode = file_inode(filp);
     struct my_ramfs_inode_info *info = inode->i_private;
-    u8 *buffer, *compressed;
-    ssize_t len;
-    int comp_len;
+    u8 *old_data = NULL, *new_data = NULL, *compressed = NULL;
+    size_t old_uncompressed = 0;
+    loff_t pos = iocb->ki_pos;
+    size_t len = iov_iter_count(from);
+    size_t new_size;
+    ssize_t ret;
 
-    len = iov_iter_count(from);
     if (len == 0)
         return 0;
 
-    buffer = kmalloc(len, GFP_KERNEL);
-    if (!buffer)
-        return -ENOMEM;
+    if (iocb->ki_flags & IOCB_APPEND)
+        pos = inode->i_size;
 
-    if (!copy_from_iter_full(buffer, len, from)) {
-        kfree(buffer);
-        return -EFAULT;
+    if (info && info->data && inode->i_size > 0) {
+        ret = rle_decompress(info->data, info->size, &old_data);
+        if (ret < 0)
+            return ret;
+        old_uncompressed = ret;
     }
 
-    comp_len = rle_compress(buffer, len, &compressed);
-    kfree(buffer);
-    if (comp_len < 0)
-        return comp_len;
+    new_size = max_t(loff_t, pos + len, inode->i_size);
+    new_data = kzalloc(new_size, GFP_KERNEL);
+    if (!new_data) {
+        kfree(old_data);
+        return -ENOMEM;
+    }
 
-    if (info) {
-        kfree(info->data);
-    } else {
+    if (old_data) {
+        size_t copy_size = min_t(size_t, old_uncompressed, inode->i_size);
+        memcpy(new_data, old_data, copy_size);
+        kfree(old_data);
+    }
+
+    u8 *tmp_buf = kmalloc(len, GFP_KERNEL);
+    if (!tmp_buf) {
+        kfree(new_data);
+        return -ENOMEM;
+    }
+    if (!copy_from_iter_full(tmp_buf, len, from)) {
+        kfree(tmp_buf);
+        kfree(new_data);
+        return -EFAULT;
+    }
+    memcpy(new_data + pos, tmp_buf, len);
+    kfree(tmp_buf);
+
+    ret = rle_compress(new_data, new_size, &compressed);
+    kfree(new_data);
+    if (ret < 0)
+        return ret;
+
+    if (!info) {
         info = kmalloc(sizeof(*info), GFP_KERNEL);
         if (!info) {
             kfree(compressed);
             return -ENOMEM;
         }
         inode->i_private = info;
+    } else {
+        kfree(info->data);
     }
     info->data = compressed;
-    info->size = comp_len;
+    info->size = ret;
 
-    inode->i_size = len;
+    inode->i_size = new_size;
     inode_set_mtime_to_ts(inode, current_time(inode));
     inode_set_ctime_to_ts(inode, current_time(inode));
+    iocb->ki_pos = pos + len;
+
     return len;
 }
 
